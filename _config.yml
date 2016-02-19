@@ -2,9 +2,9 @@
 #      Main Configs       #
 # ----------------------- #
 
-url: http://yoursite.com
-title: My Octopress Blog
-subtitle: A blogging framework for hackers.
+url: http://vmsearch.github.io
+title: kvm and xen searcher
+subtitle: 就是喜欢虚拟化
 author: Your Name
 simple_search: https://www.google.com/search
 description:
