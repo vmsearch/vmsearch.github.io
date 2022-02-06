@@ -120,7 +120,7 @@
     <center>一带三架构</center></p>
 <p>关于这个一带三架构这里我详细介绍一下，这里的每个sockets其实都一个单路的graviton3服务器。底层实现原理其实也比较简单，每台单路的服务器通过物理link直接跟nitro 卡链接，然后这个link主要是用来传输标准的pcie 协议，使得nitro card能为三台服务器模拟设备。</p>
 <p>其实这种设计并不是aws首创，国外的dpu创业公司fungible 很早就提出了这种设计，只是aws 成功的把这种设计在其数据中心进行了落地。</p>
-<p>### graviton3 背后的设计逻辑</p>
+<p>###graviton3 背后的设计逻辑</p>
 <ol>
 <li><strong>gravition3 只提供64 cores，2.6GHZ</strong></li>
 </ol>
@@ -157,20 +157,6 @@
 </ol>
 <p><img alt="Pasted image 20211208165219" src="images/Pasted image 20211208165219.png"></p>
 <p><img alt="Pasted image 20211208165305.png" src="images/Pasted image 20211208165305.png"></p>
-<ul>
-<li>整体架构<ul>
-<li>性能加强</li>
-<li>功耗</li>
-<li>压测对比</li>
-</ul>
-</li>
-</ul>
-<p><a href="https://whatis.techtarget.com/definition/chiplet">chiplet</a></p>
-<p><a href="http://muratbuffalo.blogspot.com/2021/12/graviton2-and-graviton3.html">graviton2 and graviton3</a></p>
-<p>SVE： VE（可扩展矢量指令Scalable Vector Extension）是针对高性能计算（HPC）和机器学习等领域开发的一套全新的矢量指令集</p>
-<p>A chiplet is a sub processing unit, usually controlled by a <a href="https://whatis.techtarget.com/definition/input-output-I-O">I/O</a> controller <a href="https://whatis.techtarget.com/definition/chip">chip</a> on the same package. Chiplet design is a modular approach to building <a href="https://whatis.techtarget.com/definition/processor">processors</a>. Both <a href="https://searchservervirtualization.techtarget.com/definition/AMD">AMD</a> and Intel, current major CPU manufacturers, are adopting chiplet designs for their current product line ups. Chiplets help increase production by way of better silicon yields. Higher yields and modular building mean a producing high core count parts mean less waste.</p>
-<p>Chiplets allow manufacturers to increase yields of chips over monolithic CPU designs where all pieces of a processing unit are built into a single piece of silicon. The increase in yields is because a single monolithic chip with a defect on a core will either have to be sold as a lower model with fewer cores or thrown out entirely. With the chiplet approach, a single defective chiplet is discarded and CPU can be sold as the desired model by adding more cores.</p>
-<p>Chiplet designs also stand to optimize production by way of using different photolithographic processes for different the I/O and chiplets.  A chiplet may be one of a number of similar units on separate pieces of silicon to which threads are offloaded for processing. These high power consumption devices benefit most from newer processes where they may be able to operate with higher frequencies, with lower power consumption or with some balance between the two. The I/O die has connectivity to the memory through the <a href="https://whatis.techtarget.com/definition/memory-management">memory controller</a> and peripheral connectivity through the systems <a href="https://www.techtarget.com/searchnetworking/definition/bus-network">bus</a>, such as AMD’s Infinity Fabric. Both memory controllers and Infinity Fabric are difficult to scale below 14nm and see less benefit from this transition. Intel is also taking a modular approach to processors with 3D stacking, allowing chiplets to be manufactured in vertical stacks as well.</p>
 
 
              
