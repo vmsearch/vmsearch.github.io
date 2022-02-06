@@ -112,10 +112,12 @@
 <p>基于graviton3，aws发布了c7g服务器如下图所示：</p>
 <p><img alt="Pasted image 20211207214854" src="images/Pasted image 20211207214854.png">
   <center> 图1</center></p>
-<p>c7g服务器架构如下：
-  - no numa架构，无SMT，每个vcpu都是一个physical core
-  - 3 sockets/server,  采用一个Nitro card 带3 个graviton 3 sockets, 将传统42U 机架利用率提高50%的同时，也顺便降低了功耗。
-  - 8 channel DDR5</p>
+<p>c7g服务器架构如下:</p>
+<ul>
+<li>no numa架构，无SMT，每个vcpu都是一个physical core</li>
+<li>3 sockets/server,  采用一个Nitro card 带3 个graviton 3 sockets, 将传统42U 机架利用率提高50%的同时，也顺便降低了功耗。</li>
+<li>8 channel DDR5</li>
+</ul>
 <p><img alt="Pasted image 20211208100455.png" src="images/Pasted image 20211208100455.png">
     <center>一带三架构</center></p>
 <p>关于这个一带三架构这里我详细介绍一下，这里的每个sockets其实都一个单路的graviton3服务器。底层实现原理其实也比较简单，每台单路的服务器通过物理link直接跟nitro 卡链接，然后这个link主要是用来传输标准的pcie 协议，使得nitro card能为三台服务器模拟设备。</p>
