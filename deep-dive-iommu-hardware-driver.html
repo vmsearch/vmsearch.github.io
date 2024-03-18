@@ -13,12 +13,12 @@
 
 <meta property="og:title" content="深入了解iommu系列一：iommu硬件架构和驱动初始化 "/>
 <meta property="og:url" content="/deep-dive-iommu-hardware-driver.html" />
-<meta property="og:description" content="硬件架构 为了让大家对iommu有个直观的认识，我们先从硬件架构上看一下iommu是个什么东东。 图1 如上图所示，iommu就是上图所 …" />
+<meta property="og:description" content="硬件架构 为了让大家对iommu有个直观的认识，我们先从硬件架构上看一下iommu是个什么东东。 图1 如上图所示，iommu就是上图所展示的DMA Remapping Unit，通常一台硬件服务器上会有多个DMA Remapping …" />
 <meta property="og:site_name" content="kernelnote" />
 <meta property="og:article:author" content="duma" />
 <meta property="og:article:published_time" content="2022-01-18T20:14:00+08:00" />
 <meta name="twitter:title" content="深入了解iommu系列一：iommu硬件架构和驱动初始化 ">
-<meta name="twitter:description" content="硬件架构 为了让大家对iommu有个直观的认识，我们先从硬件架构上看一下iommu是个什么东东。 图1 如上图所示，iommu就是上图所 …">
+<meta name="twitter:description" content="硬件架构 为了让大家对iommu有个直观的认识，我们先从硬件架构上看一下iommu是个什么东东。 图1 如上图所示，iommu就是上图所展示的DMA Remapping Unit，通常一台硬件服务器上会有多个DMA Remapping …">
 
         <title>深入了解iommu系列一：iommu硬件架构和驱动初始化  · kernelnote
 </title>
@@ -97,78 +97,78 @@
 <p><img alt="drhd" src="images/drhd.png">
 <center>图5 </center></p>
 <p>结合上面的图我们重点介绍几个Field，一个是segment number你可以理解为与某个dma remapping unit关联的pci domain；一个是device scope也就是文章开头所描述的每个dmar unit下可以关联不同的设备；一个是INCLUDE_PCI_ALL这个标志位，当这个bit被设置上时驱动会扫描pcie bus下面的所有设备并把这些设备跟这个dmar unit 关联起来，如果这个bit没有设置上则驱动需要解析device scope 然后把这个scope下面的设备跟这个dmar unit关联起来。最后一个就是register base address它定义一系列的register。下面我们看一下驱动里面与之相对应的结构体的定义：</p>
-<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="n">dmar_drhd_unit</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="n">list_head</span><span class="w"> </span><span class="n">list</span><span class="p">;</span><span class="w">          </span><span class="cm">/* list of drhd units   */</span><span class="w"></span>
-<span class="w">        </span><span class="k">struct</span><span class="w">  </span><span class="n">acpi_dmar_header</span><span class="w"> </span><span class="o">*</span><span class="n">hdr</span><span class="p">;</span><span class="w">  </span><span class="cm">/* ACPI header          */</span><span class="w"></span>
-<span class="w">        </span><span class="n">u64</span><span class="w">     </span><span class="n">reg_base_addr</span><span class="p">;</span><span class="w">          </span><span class="cm">/* register base address*/</span><span class="w"></span>
-<span class="w">        </span><span class="k">struct</span><span class="w">  </span><span class="n">dmar_dev_scope</span><span class="w"> </span><span class="o">*</span><span class="n">devices</span><span class="p">;</span><span class="cm">/* target device array  */</span><span class="w"></span>
-<span class="w">        </span><span class="kt">int</span><span class="w">     </span><span class="n">devices_cnt</span><span class="p">;</span><span class="w">            </span><span class="cm">/* target device count  */</span><span class="w"></span>
-<span class="w">        </span><span class="n">u16</span><span class="w">     </span><span class="n">segment</span><span class="p">;</span><span class="w">                </span><span class="cm">/* PCI domain           */</span><span class="w"></span>
-<span class="w">        </span><span class="n">u8</span><span class="w">      </span><span class="nl">ignored:</span><span class="mh">1</span><span class="p">;</span><span class="w">              </span><span class="cm">/* ignore drhd          */</span><span class="w"></span>
-<span class="w">        </span><span class="n">u8</span><span class="w">      </span><span class="nl">include_all:</span><span class="mh">1</span><span class="p">;</span><span class="w"></span>
-<span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="n">intel_iommu</span><span class="w"> </span><span class="o">*</span><span class="n">iommu</span><span class="p">;</span><span class="w"></span>
+<div class="highlight"><pre><span></span><code><span class="nx">struct</span><span class="w"> </span><span class="nx">dmar_drhd_unit</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">list_head</span><span class="w"> </span><span class="nx">list</span><span class="p">;</span><span class="w">          </span><span class="cm">/* list of drhd units   */</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w">  </span><span class="nx">acpi_dmar_header</span><span class="w"> </span><span class="o">*</span><span class="nx">hdr</span><span class="p">;</span><span class="w">  </span><span class="cm">/* ACPI header          */</span>
+<span class="w">        </span><span class="kt">u64</span><span class="w">     </span><span class="nx">reg_base_addr</span><span class="p">;</span><span class="w">          </span><span class="cm">/* register base address*/</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w">  </span><span class="nx">dmar_dev_scope</span><span class="w"> </span><span class="o">*</span><span class="nx">devices</span><span class="p">;</span><span class="cm">/* target device array  */</span>
+<span class="w">        </span><span class="nx">int</span><span class="w">     </span><span class="nx">devices_cnt</span><span class="p">;</span><span class="w">            </span><span class="cm">/* target device count  */</span>
+<span class="w">        </span><span class="kt">u16</span><span class="w">     </span><span class="nx">segment</span><span class="p">;</span><span class="w">                </span><span class="cm">/* PCI domain           */</span>
+<span class="w">        </span><span class="kt">u8</span><span class="w">      </span><span class="nx">ignored</span><span class="p">:</span><span class="mi">1</span><span class="p">;</span><span class="w">              </span><span class="cm">/* ignore drhd          */</span>
+<span class="w">        </span><span class="kt">u8</span><span class="w">      </span><span class="nx">include_all</span><span class="p">:</span><span class="mi">1</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">intel_iommu</span><span class="w"> </span><span class="o">*</span><span class="nx">iommu</span><span class="p">;</span>
 <span class="p">};</span><span class="w"> </span>
 </code></pre></div>
 
 <p>其中，struct intel_iommu 是对iommu硬件的一个抽象，其在内核里面的相关定义如下：</p>
-<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">intel_iommu</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">        </span><span class="kt">void</span><span class="w"> </span><span class="n">__iomem</span><span class="w">    </span><span class="o">*</span><span class="n">reg</span><span class="p">;</span><span class="w"> </span><span class="cm">/* Pointer to hardware regs, virtual addr */</span><span class="w"></span>
-<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">reg_phys</span><span class="p">;</span><span class="w"> </span><span class="cm">/* physical address of hw register set */</span><span class="w"></span>
-<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">reg_size</span><span class="p">;</span><span class="w"> </span><span class="cm">/* size of hw register set */</span><span class="w"></span>
-<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">cap</span><span class="p">;</span><span class="w"></span>
-<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">ecap</span><span class="p">;</span><span class="w"></span>
-<span class="w">        </span><span class="n">u32</span><span class="w">             </span><span class="n">gcmd</span><span class="p">;</span><span class="w"> </span><span class="cm">/* Holds TE, EAFL. Don&#39;t need SRTP, SFL, WBF */</span><span class="w"></span>
-<span class="w">        </span><span class="n">raw_spinlock_t</span><span class="w">  </span><span class="n">register_lock</span><span class="p">;</span><span class="w"> </span><span class="cm">/* protect register handling */</span><span class="w"></span>
-<span class="w">        </span><span class="kt">int</span><span class="w">             </span><span class="n">seq_id</span><span class="p">;</span><span class="w"> </span><span class="cm">/* sequence id of the iommu */</span><span class="w"></span>
-<span class="w">        </span><span class="kt">int</span><span class="w">             </span><span class="n">agaw</span><span class="p">;</span><span class="w"> </span><span class="cm">/* agaw of this iommu */</span><span class="w"></span>
-<span class="w">        </span><span class="kt">int</span><span class="w">             </span><span class="n">msagaw</span><span class="p">;</span><span class="w"> </span><span class="cm">/* max sagaw of this iommu */</span><span class="w"></span>
-<span class="w">        </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">int</span><span class="w">    </span><span class="n">irq</span><span class="p">,</span><span class="w"> </span><span class="n">pr_irq</span><span class="p">;</span><span class="w"></span>
-<span class="w">        </span><span class="n">u16</span><span class="w">             </span><span class="n">segment</span><span class="p">;</span><span class="w">     </span><span class="cm">/* PCI segment# */</span><span class="w"></span>
-<span class="w">        </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">char</span><span class="w">   </span><span class="n">name</span><span class="p">[</span><span class="mi">13</span><span class="p">];</span><span class="w">    </span><span class="cm">/* Device Name */</span><span class="w"></span>
+<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">intel_iommu</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">void</span><span class="w"> </span><span class="n">__iomem</span><span class="w">    </span><span class="o">*</span><span class="n">reg</span><span class="p">;</span><span class="w"> </span><span class="cm">/* Pointer to hardware regs, virtual addr */</span>
+<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">reg_phys</span><span class="p">;</span><span class="w"> </span><span class="cm">/* physical address of hw register set */</span>
+<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">reg_size</span><span class="p">;</span><span class="w"> </span><span class="cm">/* size of hw register set */</span>
+<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">cap</span><span class="p">;</span>
+<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">ecap</span><span class="p">;</span>
+<span class="w">        </span><span class="n">u32</span><span class="w">             </span><span class="n">gcmd</span><span class="p">;</span><span class="w"> </span><span class="cm">/* Holds TE, EAFL. Don&#39;t need SRTP, SFL, WBF */</span>
+<span class="w">        </span><span class="n">raw_spinlock_t</span><span class="w">  </span><span class="n">register_lock</span><span class="p">;</span><span class="w"> </span><span class="cm">/* protect register handling */</span>
+<span class="w">        </span><span class="kt">int</span><span class="w">             </span><span class="n">seq_id</span><span class="p">;</span><span class="w"> </span><span class="cm">/* sequence id of the iommu */</span>
+<span class="w">        </span><span class="kt">int</span><span class="w">             </span><span class="n">agaw</span><span class="p">;</span><span class="w"> </span><span class="cm">/* agaw of this iommu */</span>
+<span class="w">        </span><span class="kt">int</span><span class="w">             </span><span class="n">msagaw</span><span class="p">;</span><span class="w"> </span><span class="cm">/* max sagaw of this iommu */</span>
+<span class="w">        </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">int</span><span class="w">    </span><span class="n">irq</span><span class="p">,</span><span class="w"> </span><span class="n">pr_irq</span><span class="p">;</span>
+<span class="w">        </span><span class="n">u16</span><span class="w">             </span><span class="n">segment</span><span class="p">;</span><span class="w">     </span><span class="cm">/* PCI segment# */</span>
+<span class="w">        </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">char</span><span class="w">   </span><span class="n">name</span><span class="p">[</span><span class="mi">13</span><span class="p">];</span><span class="w">    </span><span class="cm">/* Device Name */</span>
 
 <span class="cp">#ifdef CONFIG_INTEL_IOMMU</span>
-<span class="w">        </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">long</span><span class="w">   </span><span class="o">*</span><span class="n">domain_ids</span><span class="p">;</span><span class="w"> </span><span class="cm">/* bitmap of domains */</span><span class="w"></span>
-<span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="nc">dmar_domain</span><span class="w"> </span><span class="o">***</span><span class="n">domains</span><span class="p">;</span><span class="w"> </span><span class="cm">/* ptr to domains */</span><span class="w"></span>
-<span class="w">        </span><span class="n">spinlock_t</span><span class="w">      </span><span class="n">lock</span><span class="p">;</span><span class="w"> </span><span class="cm">/* protect context, domain ids*/</span><span class="w"></span>
-<span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="nc">root_entry</span><span class="w"> </span><span class="o">*</span><span class="n">root_entry</span><span class="p">;</span><span class="w"> </span><span class="cm">/* virtual address */</span><span class="w"></span>
-<span class="w">        </span><span class="p">.......</span><span class="w"></span>
-<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">long</span><span class="w">   </span><span class="o">*</span><span class="n">domain_ids</span><span class="p">;</span><span class="w"> </span><span class="cm">/* bitmap of domains */</span>
+<span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="nc">dmar_domain</span><span class="w"> </span><span class="o">***</span><span class="n">domains</span><span class="p">;</span><span class="w"> </span><span class="cm">/* ptr to domains */</span>
+<span class="w">        </span><span class="n">spinlock_t</span><span class="w">      </span><span class="n">lock</span><span class="p">;</span><span class="w"> </span><span class="cm">/* protect context, domain ids*/</span>
+<span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="nc">root_entry</span><span class="w"> </span><span class="o">*</span><span class="n">root_entry</span><span class="p">;</span><span class="w"> </span><span class="cm">/* virtual address */</span>
+<span class="w">        </span><span class="p">.......</span>
+<span class="w">    </span><span class="p">}</span>
 </code></pre></div>
 
 <p>其中的dmar_domain和root_entry将在iova到hpa的转换当中起到非常重要的作用，这里大家可以通过下面的一张图先有个整体的认知</p>
 <p><img alt="iotlb" src="images/iotlb.png">
 <center>图6 </center></p>
 <p>上图展示的是如何使用bdf号找到相应的iova转换表以及进行地址转换的流程，相关的细节我们将在下面的行文当中详细介绍。首先，我们来看一下iommu从发现到初始化的整个流程是怎么样的。intel iommu的发现是从IOMMU_INIT_POST(detect_intel_iommu)这个地方开始的，我们先来先看一上detect_intel_iommu这个函数具体做了哪些事情。</p>
-<div class="highlight"><pre><span></span><code><span class="nc">int</span><span class="w"> </span><span class="n">__init</span><span class="w"> </span><span class="n">detect_intel_iommu</span><span class="p">(</span><span class="n">void</span><span class="p">)</span><span class="w"></span>
-<span class="err">{</span><span class="w"></span>
-<span class="w">        </span><span class="nc">int</span><span class="w"> </span><span class="n">ret</span><span class="p">;</span><span class="w"></span>
-<span class="w">        </span><span class="n">struct</span><span class="w"> </span><span class="n">dmar_res_callback</span><span class="w"> </span><span class="n">validate_drhd_cb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">{</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_UNIT</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_validate_one_drhd</span><span class="p">,</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">ignore_unhandled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">,</span><span class="w"></span>
-<span class="w">        </span><span class="err">}</span><span class="p">;</span><span class="w"></span>
+<div class="highlight"><pre><span></span><code><span class="nc">int</span><span class="w"> </span><span class="n">__init</span><span class="w"> </span><span class="n">detect_intel_iommu</span><span class="p">(</span><span class="n">void</span><span class="p">)</span>
+<span class="err">{</span>
+<span class="w">        </span><span class="nc">int</span><span class="w"> </span><span class="n">ret</span><span class="p">;</span>
+<span class="w">        </span><span class="n">struct</span><span class="w"> </span><span class="n">dmar_res_callback</span><span class="w"> </span><span class="n">validate_drhd_cb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_UNIT</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_validate_one_drhd</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">ignore_unhandled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">,</span>
+<span class="w">        </span><span class="err">}</span><span class="p">;</span>
 
-<span class="w">        </span><span class="n">down_write</span><span class="p">(</span><span class="o">&amp;</span><span class="n">dmar_global_lock</span><span class="p">);</span><span class="w"></span>
-<span class="w">        </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dmar_table_detect</span><span class="p">();</span><span class="w"></span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="p">)</span><span class="w"></span>
-<span class="w">                </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">!</span><span class="n">dmar_walk_dmar_table</span><span class="p">((</span><span class="n">struct</span><span class="w"> </span><span class="n">acpi_table_dmar</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">dmar_tbl</span><span class="p">,</span><span class="w"></span>
-<span class="w">                                            </span><span class="o">&amp;</span><span class="n">validate_drhd_cb</span><span class="p">);</span><span class="w"></span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">no_iommu</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">iommu_detected</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">dmar_disabled</span><span class="p">)</span><span class="w"> </span><span class="err">{</span><span class="w"></span>
-<span class="w">                </span><span class="n">iommu_detected</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"></span>
-<span class="w">                </span><span class="cm">/* Make sure ACS will be enabled */</span><span class="w"></span>
-<span class="w">                </span><span class="n">pci_request_acs</span><span class="p">();</span><span class="w"></span>
-<span class="w">        </span><span class="err">}</span><span class="w"></span>
+<span class="w">        </span><span class="n">down_write</span><span class="p">(</span><span class="o">&amp;</span><span class="n">dmar_global_lock</span><span class="p">);</span>
+<span class="w">        </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dmar_table_detect</span><span class="p">();</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+<span class="w">                </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">!</span><span class="n">dmar_walk_dmar_table</span><span class="p">((</span><span class="n">struct</span><span class="w"> </span><span class="n">acpi_table_dmar</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">dmar_tbl</span><span class="p">,</span>
+<span class="w">                                            </span><span class="o">&amp;</span><span class="n">validate_drhd_cb</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">no_iommu</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">iommu_detected</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">dmar_disabled</span><span class="p">)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="n">iommu_detected</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">                </span><span class="cm">/* Make sure ACS will be enabled */</span>
+<span class="w">                </span><span class="n">pci_request_acs</span><span class="p">();</span>
+<span class="w">        </span><span class="err">}</span>
 
-<span class="n">#ifdef</span><span class="w"> </span><span class="n">CONFIG_X86</span><span class="w"></span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="p">)</span><span class="w"></span>
-<span class="w">                </span><span class="n">x86_init</span><span class="p">.</span><span class="n">iommu</span><span class="p">.</span><span class="n">iommu_init</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">intel_iommu_init</span><span class="p">;</span><span class="w"></span>
-<span class="n">#endif</span><span class="w"></span>
+<span class="n">#ifdef</span><span class="w"> </span><span class="n">CONFIG_X86</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+<span class="w">                </span><span class="n">x86_init</span><span class="p">.</span><span class="n">iommu</span><span class="p">.</span><span class="n">iommu_init</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">intel_iommu_init</span><span class="p">;</span>
+<span class="n">#endif</span>
 
-<span class="w">        </span><span class="n">early_acpi_os_unmap_memory</span><span class="p">((</span><span class="n">void</span><span class="w"> </span><span class="n">__iomem</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">dmar_tbl</span><span class="p">,</span><span class="w"> </span><span class="n">dmar_tbl_size</span><span class="p">);</span><span class="w"></span>
-<span class="w">        </span><span class="n">dmar_tbl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">NULL</span><span class="p">;</span><span class="w"></span>
-<span class="w">        </span><span class="n">up_write</span><span class="p">(</span><span class="o">&amp;</span><span class="n">dmar_global_lock</span><span class="p">);</span><span class="w"></span>
+<span class="w">        </span><span class="n">early_acpi_os_unmap_memory</span><span class="p">((</span><span class="n">void</span><span class="w"> </span><span class="n">__iomem</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">dmar_tbl</span><span class="p">,</span><span class="w"> </span><span class="n">dmar_tbl_size</span><span class="p">);</span>
+<span class="w">        </span><span class="n">dmar_tbl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">NULL</span><span class="p">;</span>
+<span class="w">        </span><span class="n">up_write</span><span class="p">(</span><span class="o">&amp;</span><span class="n">dmar_global_lock</span><span class="p">);</span>
 
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ret</span><span class="w"> </span><span class="vm">?</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="err">:</span><span class="w"> </span><span class="o">-</span><span class="n">ENODEV</span><span class="p">;</span><span class="w"></span>
-<span class="err">}</span><span class="w"></span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ret</span><span class="w"> </span><span class="vm">?</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="err">:</span><span class="w"> </span><span class="o">-</span><span class="n">ENODEV</span><span class="p">;</span>
+<span class="err">}</span>
 </code></pre></div>
 
 <p>这个函数主要作用就是获取dmar acpi表，然后解析表里面的相关信息如果表里面remapping structure为drhd则通过cb函数来验证dma remapping hardware unit是否可用，具体大家可以去看一下<code>dmar_validate_one_dh</code>相关实现这里就不多说了。还有就是指定iommu_init函数入口为intel_iommu_init。下面我们来看一下这个函数里面主要做了哪些事情。</p>
@@ -179,16 +179,16 @@
 <ul>
 <li>dmar_table_init</li>
 </ul>
-<div class="highlight"><pre><span></span><code><span class="n">struct</span><span class="w"> </span><span class="n">dmar_res_callback</span><span class="w"> </span><span class="n">cb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">{</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">print_entry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">,</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">ignore_unhandled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">,</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">arg</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_UNIT</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">drhd_count</span><span class="p">,</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_UNIT</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_drhd</span><span class="p">,</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_RESERVED_MEMORY</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_rmrr</span><span class="p">,</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_ROOT_ATS</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_atsr</span><span class="p">,</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_AFFINITY</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_rhsa</span><span class="p">,</span><span class="w"></span>
-<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_NAMESPACE</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_andd</span><span class="p">,</span><span class="w"></span>
-<span class="w">        </span><span class="err">}</span><span class="p">;</span><span class="w"></span>
+<div class="highlight"><pre><span></span><code><span class="n">struct</span><span class="w"> </span><span class="n">dmar_res_callback</span><span class="w"> </span><span class="n">cb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="p">.</span><span class="n">print_entry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">ignore_unhandled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">arg</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_UNIT</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">drhd_count</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_UNIT</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_drhd</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_RESERVED_MEMORY</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_rmrr</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_ROOT_ATS</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_atsr</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_AFFINITY</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_rhsa</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_NAMESPACE</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_andd</span><span class="p">,</span>
+<span class="w">        </span><span class="err">}</span><span class="p">;</span>
 </code></pre></div>
 
 <p>解析dmar表中不同类型的remapping structures，上文的图中已经进行了相关说明，目前只支持5类，它们分别是HARDWARE_UNIT，RESERVED_MEMORY，ROOT_ATS ，HARDWARE_AFFINITY，NAMESPACE。其中hardware_unit指的就是iommu硬件，而ATS指的是pcie 的一个重要feature这里我们也不细说。我们重点讲一下RESERVED_MEMORY和 HARDWARE_AFFINITY。HARDWARE_AFFINITY具体指的是Remapping Hardware Status Affinity(RHSA)信息，主要因为在numa架构下iommu硬件可能会跨node，而通过RHSA信息来报告cpu和内存跟每个iommu硬件的亲和性，从而 保证了iommu硬件的perfomace。RESERVED_MEMORY 类型的structures描述的是专门给一些设备预留的DMA内存信息，RMRR 的内存区域必须是4k对齐的，原则上RMRR只针对一些legacy设备比如USB，UMA graphics等设备来使用，而其他设备类型一般不建议使用RMRR。</p>
@@ -212,15 +212,15 @@
 <li>hw_pass_through &amp;iommu_pass_through</li>
 </ul>
 <p>前者表示iommu硬件是否有直通能力是通过读iommu硬件的ecap来获取的，而后者是通过kernel的cmdline人为设置iommu=pt来实现的。如果设置为pt，则iommu_pass_through设置为1，相应的iommu_identify_mapping会设置为IDENTMAP_ALL。在这种场景下，系统会通过si_domain_init创建一个全局的dmar_domain(你可以理解它存储了所有的图6当中address translation的页表)，si表示的是static即静态的，之所以说是静态的是因为si_domain会把每个node上的内存提前建立好iova到hpa的mapping：</p>
-<div class="highlight"><pre><span></span><code>        <span class="nv">for_each_online_node</span><span class="ss">(</span><span class="nv">nid</span><span class="ss">)</span> {
-                <span class="nv">unsigned</span> <span class="nv">long</span> <span class="nv">start_pfn</span>, <span class="nv">end_pfn</span><span class="c1">;</span>
-                <span class="nv">int</span> <span class="nv">i</span><span class="c1">;</span>
+<div class="highlight"><pre><span></span><code>        for_each_online_node(nid) {
+                unsigned long start_pfn, end_pfn;
+                int i;
 
-                <span class="nv">for_each_mem_pfn_range</span><span class="ss">(</span><span class="nv">i</span>, <span class="nv">nid</span>, <span class="o">&amp;</span><span class="nv">start_pfn</span>, <span class="o">&amp;</span><span class="nv">end_pfn</span>, <span class="nv">NULL</span><span class="ss">)</span> {
-                        <span class="nv">ret</span> <span class="o">=</span> <span class="nv">iommu_domain_identity_map</span><span class="ss">(</span><span class="nv">si_domain</span>,
-                                        <span class="nv">PFN_PHYS</span><span class="ss">(</span><span class="nv">start_pfn</span><span class="ss">)</span>, <span class="nv">PFN_PHYS</span><span class="ss">(</span><span class="nv">end_pfn</span><span class="ss">))</span><span class="c1">;</span>
-                        <span class="k">if</span> <span class="ss">(</span><span class="nv">ret</span><span class="ss">)</span>
-                                <span class="k">return</span> <span class="nv">ret</span><span class="c1">;</span>
+                for_each_mem_pfn_range(i, nid, &amp;start_pfn, &amp;end_pfn, NULL) {
+                        ret = iommu_domain_identity_map(si_domain,
+                                        PFN_PHYS(start_pfn), PFN_PHYS(end_pfn));
+                        if (ret)
+                                return ret;
                 }
         }
 </code></pre></div>
@@ -230,57 +230,57 @@
 <li>bus_set_iommu(&amp;pci_bus_type, &amp;intel_iommu_ops)</li>
 </ul>
 <p>这个函数主要是为pci_bus设置intel_iommu_ops，并通过iommu_bus_init做一些初化的工作。具体的工作包括为bus注册通知回调函数，还有就是通过<code>add_iommu_group</code>给每个设备创建iommu_group，一个iommu_group可以对一个设备也可以对应多个设备，至于具体是如何分组我们看一下具体的函数实现，这段逻辑最终会调用到pci_device_group函数：</p>
-<div class="highlight"><pre><span></span><code><span class="n">struct</span><span class="w"> </span><span class="n">iommu_group</span><span class="w"> </span><span class="o">*</span><span class="n">pci_device_group</span><span class="p">(</span><span class="n">struct</span><span class="w"> </span><span class="n">device</span><span class="w"> </span><span class="o">*</span><span class="n">dev</span><span class="p">)</span><span class="w"></span>
-<span class="p">{</span><span class="w"></span>
-<span class="w">    </span><span class="n">struct</span><span class="w"> </span><span class="n">pci_dev</span><span class="w"> </span><span class="o">*</span><span class="n">pdev</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">to_pci_dev</span><span class="p">(</span><span class="n">dev</span><span class="p">);</span><span class="w"></span>
+<div class="highlight"><pre><span></span><code>struct iommu_group *pci_device_group(struct device *dev)
+{
+    struct pci_dev <span class="gs">*pdev = to_pci_dev(dev);</span>
 
-<span class="w">    </span><span class="cm">/*</span>
-<span class="cm">     * Find the upstream DMA alias for the device.  A device must not</span>
-<span class="cm">     * be aliased due to topology in order to have its own IOMMU group.</span>
-<span class="cm">     * If we find an alias along the way that already belongs to a</span>
-<span class="cm">     * group, use it.</span>
-<span class="cm">     */</span><span class="w">  </span>
-<span class="w">    </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">pci_for_each_dma_alias</span><span class="p">(</span><span class="n">pdev</span><span class="p">,</span><span class="w"> </span><span class="n">get_pci_alias_or_group</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">data</span><span class="p">))</span><span class="w"></span>
-<span class="w">        </span><span class="kr">return</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="kr">group</span><span class="p">;</span><span class="w"></span>
+<span class="gs">    /*</span>
+     <span class="k">*</span> Find the upstream DMA alias for the device.  A device must not
+     <span class="k">*</span> be aliased due to topology in order to have its own IOMMU group.
+     <span class="k">*</span> If we find an alias along the way that already belongs to a
+     <span class="k">*</span> group, use it.
+     <span class="gs">*/  </span>
+<span class="gs">    if (pci_for_each_dma_alias(pdev, get_pci_alias_or_group, &amp;data))</span>
+<span class="gs">        return data.group;</span>
 
-<span class="w">    </span><span class="cm">/*</span>
-<span class="cm">     * Continue upstream from the point of minimum IOMMU granularity</span>
-<span class="cm">     * due to aliases to the point where devices are protected from</span>
-<span class="cm">     * peer-to-peer DMA by PCI ACS.  Again, if we find an existing</span>
-<span class="cm">     * group, use it.</span>
-<span class="cm">     */</span><span class="w"></span>
-<span class="w">    </span><span class="n">for</span><span class="w"> </span><span class="p">(</span><span class="n">bus</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pdev</span><span class="o">-&gt;</span><span class="n">bus</span><span class="p">;</span><span class="w"> </span><span class="o">!</span><span class="n">pci_is_root_bus</span><span class="p">(</span><span class="n">bus</span><span class="p">);</span><span class="w"> </span><span class="n">bus</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">bus</span><span class="o">-&gt;</span><span class="n">parent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">        </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">bus</span><span class="o">-&gt;</span><span class="kr">self</span><span class="p">)</span><span class="w"></span>
-<span class="w">            </span><span class="n">continue</span><span class="p">;</span><span class="w"></span>
+<span class="gs">    /*</span>
+     <span class="k">*</span> Continue upstream from the point of minimum IOMMU granularity
+     <span class="k">*</span> due to aliases to the point where devices are protected from
+     <span class="k">*</span> peer-to-peer DMA by PCI ACS.  Again, if we find an existing
+     <span class="k">*</span> group, use it.
+     <span class="gs">*/</span>
+<span class="gs">    for (bus = pdev-&gt;bus; !pci_is_root_bus(bus); bus = bus-&gt;parent) {</span>
+<span class="gs">        if (!bus-&gt;self)</span>
+<span class="gs">            continue;</span>
 
-<span class="w">        </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">pci_acs_path_enabled</span><span class="p">(</span><span class="n">bus</span><span class="o">-&gt;</span><span class="kr">self</span><span class="p">,</span><span class="w"> </span><span class="n">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">REQ_ACS_FLAGS</span><span class="p">))</span><span class="w"></span>
-<span class="w">            </span><span class="n">break</span><span class="p">;</span><span class="w"></span>
+<span class="gs">        if (pci_acs_path_enabled(bus-&gt;self, NULL, REQ_ACS_FLAGS))</span>
+<span class="gs">            break;</span>
 
-<span class="w">        </span><span class="n">pdev</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">bus</span><span class="o">-&gt;</span><span class="kr">self</span><span class="p">;</span><span class="w"></span>
-<span class="w">        </span><span class="kr">group</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">iommu_group_get</span><span class="p">(</span><span class="o">&amp;</span><span class="n">pdev</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">);</span><span class="w"></span>
-<span class="w">        </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="kr">group</span><span class="p">)</span><span class="w"></span>
-<span class="w">            </span><span class="kr">return</span><span class="w"> </span><span class="kr">group</span><span class="p">;</span><span class="w"></span>
-<span class="w">   </span><span class="p">}</span><span class="w"></span>
+<span class="gs">        pdev = bus-&gt;self;</span>
+<span class="gs">        group = iommu_group_get(&amp;pdev-&gt;dev);</span>
+<span class="gs">        if (group)</span>
+<span class="gs">            return group;</span>
+<span class="gs">   }</span>
 
-<span class="w">    </span><span class="cm">/*   </span>
-<span class="cm">     * Look for existing groups on device aliases.  If we alias another</span>
-<span class="cm">     * device or another device aliases us, use the same group.</span>
-<span class="cm">     */</span><span class="w"></span>
-<span class="w">    </span><span class="kr">group</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">get_pci_alias_group</span><span class="p">(</span><span class="n">pdev</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">unsigned</span><span class="w"> </span><span class="n">long</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">devfns</span><span class="p">);</span><span class="w"></span>
-<span class="w">    </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="kr">group</span><span class="p">)</span><span class="w"></span>
-<span class="w">        </span><span class="kr">return</span><span class="w"> </span><span class="kr">group</span><span class="p">;</span><span class="w"></span>
+<span class="gs">    /*</span>   
+     <span class="k">*</span> Look for existing groups on device aliases.  If we alias another
+     <span class="k">*</span> device or another device aliases us, use the same group.
+     <span class="gs">*/</span>
+<span class="gs">    group = get_pci_alias_group(pdev, (unsigned long *</span>)devfns);
+    if (group)
+        return group;
 
-<span class="w">    </span><span class="cm">/*   </span>
-<span class="cm">     * Look for existing groups on non-isolated functions on the same</span>
-<span class="cm">     * slot and aliases of those funcions, if any.  No need to clear</span>
-<span class="cm">     * the search bitmap, the tested devfns are still valid.</span>
-<span class="cm">     */</span><span class="w"></span>
-<span class="w">    </span><span class="kr">group</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">get_pci_function_alias_group</span><span class="p">(</span><span class="n">pdev</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">unsigned</span><span class="w"> </span><span class="n">long</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">devfns</span><span class="p">);</span><span class="w"></span>
-<span class="w">    </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="kr">group</span><span class="p">)</span><span class="w"></span>
-<span class="w">        </span><span class="kr">return</span><span class="w"> </span><span class="kr">group</span><span class="p">;</span><span class="w"></span>
+    /*   
+     <span class="k">*</span> Look for existing groups on non-isolated functions on the same
+     <span class="k">*</span> slot and aliases of those funcions, if any.  No need to clear
+     <span class="k">*</span> the search bitmap, the tested devfns are still valid.
+     <span class="gs">*/</span>
+<span class="gs">    group = get_pci_function_alias_group(pdev, (unsigned long *</span>)devfns);
+    if (group)
+        return group;
 
-<span class="w">    </span><span class="kr">return</span><span class="w"> </span><span class="n">iommu_group_alloc</span><span class="p">();</span><span class="w"></span>
-<span class="p">}</span><span class="w"></span>
+    return iommu_group_alloc();
+}
 </code></pre></div>
 
 <p>这个函数的核心逻辑在于<code>pci_acs_path_enabled</code>，简单来说如果是pcie的设备则检查该设备到root complex的路径上如果都开启了ACS则这个设备就单独成一个iommu_group，如果不是则找到它的alias group就行了比如如果这个是传统的pci bus(没有pcie这些ACS的特性)则这个pci bus下面的所有设备就组合成一个iommu_group。</p>
