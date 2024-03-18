@@ -145,13 +145,21 @@
 <ul>
 <li>config space、bar space、pcie capbility</li>
 </ul>
-<p>因为我们需要给vm呈现一个完整的设备，而backend 物理设备是没有sriov功能的，所以config space、bar以及相关的pci cap是需要在这个mdev driver里面进行模拟。
-- mmio 访问</p>
-<p>回想一下，在sriov场景下设备的mmio是passthrough给vm的(除msix table相关mmio)，vm侧对mmio的访问都是不需要hypervisor参与的。而在mdev场景下，由于一个设备要share给多个vm的，所以这个些mmio的访问操作都是需要在mdev driver侧来进行处理的。
--  dma</p>
-<p>在sriov场景下dma的转换是由iommu硬件侧自动完成的，而在mdev场景下由于同一个设备要在多个vm下共享无法再使用iommu功能(物理设备侧只一个bdf号，多个vm之间无法进行区分)。因此，mdev场景下dma的相关转换和相关操作也是需要在驱动里面实现。
-- 中断</p>
+<p>因为我们需要给vm呈现一个完整的设备，而backend 物理设备是没有sriov功能的，所以config space、bar以及相关的pci cap是需要在这个mdev driver里面进行模拟。</p>
+<ul>
+<li>
+<p>mmio 访问</p>
+<p>回想一下，在sriov场景下设备的mmio是passthrough给vm的(除msix table相关mmio)，vm侧对mmio的访问都是不需要hypervisor参与的。而在mdev场景下，由于一个设备要share给多个vm的，所以这个些mmio的访问操作都是需要在mdev driver侧来进行处理的。</p>
+</li>
+<li>
+<p>dma</p>
+<p>在sriov场景下dma的转换是由iommu硬件侧自动完成的，而在mdev场景下由于同一个设备要在多个vm下共享无法再使用iommu功能(物理设备侧只一个bdf号，多个vm之间无法进行区分)。因此，mdev场景下dma的相关转换和相关操作也是需要在驱动里面实现。</p>
+</li>
+<li>
+<p>中断</p>
 <p>sriov的场景下，中断采用的是dma remapping和posted interrupt，而之所以能这么干主要是因为其后端对应的是一个独立的VF；而在mdev场景下，多个vm share 一个后端硬件设备只能通过per vm的irqfd这种方式。</p>
+</li>
+</ul>
 <p>设备的 mdev driver除了需要实现的相关功能之外，在驱动init的时候还需要将自己注册为虚拟设备的parent，具体是通过<code>mdev_register_device</code> 来实现。这个函数的主要逻辑就是创建mdev_parent，然后给parent dev和ops分别赋值为当前的物理设备以及该设备mde_driver当中定义的ops，当中的回调函数定义如下：</p>
 <div class="highlight"><pre><span></span><code><span class="n">struct</span><span class="w"> </span><span class="n">mdev_parent_ops</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">struct</span><span class="w"> </span><span class="n">module</span><span class="w">   </span><span class="o">*</span><span class="n">owner</span><span class="p">;</span>
@@ -215,8 +223,10 @@
 <span class="w"> </span><span class="nx">sysfsdev</span><span class="p">=</span><span class="o">/</span><span class="nx">sys</span><span class="o">/</span><span class="nx">bus</span><span class="o">/</span><span class="nx">mdev</span><span class="o">/</span><span class="nx">devices</span><span class="o">/</span><span class="mi">83</span><span class="nx">b8f4f2</span><span class="o">-</span><span class="mi">509</span><span class="nx">f</span><span class="o">-</span><span class="mi">382</span><span class="nx">f</span><span class="o">-</span><span class="mi">3</span><span class="nx">c1e</span><span class="o">-</span><span class="nx">e6bfe0fa1001</span>
 </code></pre></div>
 
-<p>当往create去写uuid的时候，会触发 <code>mdev_device_create</code> 函数，这个函数主要实现逻辑如下：
-- 新建mdev虚拟设备，并进行相关的初始化</p>
+<p>当往create去写uuid的时候，会触发 <code>mdev_device_create</code> 函数，这个函数主要实现逻辑如下：</p>
+<ul>
+<li>新建mdev虚拟设备，并进行相关的初始化</li>
+</ul>
 <div class="highlight"><pre><span></span><code><span class="nx">mdev</span><span class="o">-&gt;</span><span class="nx">parent</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">parent</span><span class="p">;</span><span class="w"> </span><span class="c1">//这个parent指的是后端对应的物理设备</span>
 <span class="o">...</span><span class="p">..</span><span class="w"> </span><span class="c1">//skip</span>
 <span class="nx">mdev</span><span class="o">-&gt;</span><span class="nx">dev</span><span class="p">.</span><span class="nx">parent</span><span class="w">  </span><span class="p">=</span><span class="w"> </span><span class="nx">dev</span><span class="p">;</span><span class="w">   </span><span class="c1">//新创建mdev-&gt;dev实例，并将其父指向当前的dev即mtty-1</span>
@@ -275,12 +285,16 @@
 </code></pre></div>
 
 <h4>mdev 设备直通给vm的实现</h4>
-<p>如上面所示，mdev virtual dev直通给vm走的还是qemu当中vfio pci的方式。这里我们先回忆一下qemu vfio 都做了哪些事情。简单来说就是几个概念，<strong>一类是per vm的：container， vfio_iommu, vfio_domain；另一类 per device的：vfio_group。一个container下面包含多个vfio_group；一个vfio_iommu的domain_list里面当前只有一个vfio_domain</strong>。同时还有几个fd，具体如下：
-- group_fd = open("/dev/vfio/$group")
-通过这个fd下发的ioctl主要做的事情有：判断这个group是否可用，获取这个device fd，将这个group绑定到container下面。</p>
+<p>如上面所示，mdev virtual dev直通给vm走的还是qemu当中vfio pci的方式。这里我们先回忆一下qemu vfio 都做了哪些事情。简单来说就是几个概念，<strong>一类是per vm的：container， vfio_iommu, vfio_domain；另一类 per device的：vfio_group。一个container下面包含多个vfio_group；一个vfio_iommu的domain_list里面当前只有一个vfio_domain</strong>。同时还有几个fd，具体如下：</p>
 <ul>
-<li>container_fd = open("/dev/vfio/vfio")
-通过这个fd下发的ioctl主要做的事情有：获取iommu type(是type1还是spapr_tce)，将每个vfio_iommu attach到vfio_domain上。其中，后面这个事情要注意一下因为在mdev的场景下在逻辑上有些区别，具体见<code>vfio_iommu_type1_attach_group</code></li>
+<li>
+<p>group_fd = open("/dev/vfio/$group")</p>
+<p>通过这个fd下发的ioctl主要做的事情有：判断这个group是否可用，获取这个device fd，将这个group绑定到container下面。</p>
+</li>
+<li>
+<p>container_fd = open("/dev/vfio/vfio")</p>
+<p>通过这个fd下发的ioctl主要做的事情有：获取iommu type(是type1还是spapr_tce)，将每个vfio_iommu attach到vfio_domain上。其中，后面这个事情要注意一下因为在mdev的场景下在逻辑上有些区别，具体见<code>vfio_iommu_type1_attach_group</code></p>
+</li>
 </ul>
 <div class="highlight"><pre><span></span><code><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">mdev_bus</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">((</span><span class="nx">bus</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">mdev_bus</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">!</span><span class="nx">iommu_present</span><span class="p">(</span><span class="nx">bus</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
@@ -311,9 +325,11 @@
 </code></pre></div>
 
 <ul>
-<li>device fd</li>
-</ul>
+<li>
+<p>device fd</p>
 <p>设备的相关的操作比如config space，mmio的读写，bar region的map以及irq相关的操作都是通过这个fd来进行的，那么在mdev的场景 所有的操作比如read, write, ioctl都是先call到 vfio_mdev driver，然后再经过vfio_mdev call到parent ops注册的callback函数即底层硬件设备mdev driver ops 里面实现的 callback函数。</p>
+</li>
+</ul>
 <h4>总结</h4>
 <p>这里我就不详细介绍 mdev driver的具体实现了，大家如果感兴趣可以去看一下intel vgpu，mdev nvme等这些 mdev driver的实现，看完之后可能你会对这篇文章有更多的理解。从上面来看mdev的方案在性能上不可能做的太高，siov方案当中虽然也使用了mdev，但是siov当中数据面重一些要路径访问仍然走的是passthrough的方式。但是不管怎么样，mdev给我们提供了这样一种能力，至于是否能用就得看你的场景呢。</p>
 
