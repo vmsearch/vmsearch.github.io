@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh_cn">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="iommu, interrupt posting, articles, " />
+
+<meta property="og:title" content="深入了解iommu系列最终章：Interrupt Posting 机制和工作原理 "/>
+<meta property="og:url" content="/iommu-posted-interrupt-deep-dive.html" />
+<meta property="og:description" content="序言 interrupt post是iommu硬件在interrupt remapping功能上做的一个扩展，在这种机制使能的情况下直通设备的中断注入可以避免vcpu的退出和vmm的参与，从而减少直通场景下的虚拟化开销。按照惯例我 …" />
+<meta property="og:site_name" content="kernelnote" />
+<meta property="og:article:author" content="duma" />
+<meta property="og:article:published_time" content="2022-04-26T00:00:00+08:00" />
+<meta name="twitter:title" content="深入了解iommu系列最终章：Interrupt Posting 机制和工作原理 ">
+<meta name="twitter:description" content="序言 interrupt post是iommu硬件在interrupt remapping功能上做的一个扩展，在这种机制使能的情况下直通设备的中断注入可以避免vcpu的退出和vmm的参与，从而减少直通场景下的虚拟化开销。按照惯例我 …">
+
+        <title>深入了解iommu系列最终章：Interrupt Posting 机制和工作原理  · kernelnote
+</title>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="/theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="/theme/css/custom.css" media="screen">
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="/"><span class=site-name>kernelnote</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       "/"
+                                    >Home</a>
+                                </li>
+                                <li ><a href="/pages/about.html">about</a></li>
+                                <li ><a href="/categories.html">Categories</a></li>
+                                <li ><a href="/tags.html">Tags</a></li>
+                                <li ><a href="/archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="/search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<article itemscope>
+<div class="row-fluid">
+    <header class="page-header span10 offset2">
+        <h1>
+            <a href="/iommu-posted-interrupt-deep-dive.html">
+                深入了解iommu系列最终章：Interrupt Posting 机制和工作原理
+            </a>
+        </h1>
+    </header>
+</div>
+
+<div class="row-fluid">
+        <div class="span8 offset2 article-content">
+            
+            <h4>序言</h4>
+<p>interrupt post是iommu硬件在interrupt remapping功能上做的一个扩展，在这种机制使能的情况下直通设备的中断注入可以避免vcpu的退出和vmm的参与，从而减少直通场景下的虚拟化开销。按照惯例我们还是先讲一下硬件层面的机制和软件层的使能。</p>
+<h4>硬件层机制</h4>
+<p>iommu硬件上是通过capability register(CAP_REG)当中的PI这个field来表示其是否支持posted interrupt，具体的格式如下</p>
+<p><img alt="pi_cap_reg" src="images/pi_cap_reg.png"></p>
+<p><img alt="pi_field" src="images/pi_field.png">
+<center> 图1</center>
+另外，在IRTE(interrupt remap table entry) 的格式当中IM位置1表示中断模式为posted interrupt</p>
+<p><img alt="irte_pi" src="images/irte_pi.png">
+<center> 图2</center></p>
+<p>结合图2我们来介绍一下posted interrupts irte当中需要重点关注的field。</p>
+<ul>
+<li>
+<p>Posted Descriptor Address High
+bits 127:96 表示Posted interrupt Descriptor内存地址的63:32位</p>
+</li>
+<li>
+<p>Posted Descriptor Address Low
+bits 63:38 表示Posted Interrup Descriptor内存地址的31:6位</p>
+</li>
+<li>
+<p>Urgent(URG)
+表示这个中断是否需要及时被处理</p>
+</li>
+<li>
+<p>vector bits 23:16
+注意这个跟interrupt remapping 的irte当中的vector有本质的区别；在interrupt remapping 场景下这个vector就是要投递的中断向量，而interrupt post场景下，硬件通过个vector来计算需要将Post interrut request的哪一位置上。</p>
+</li>
+</ul>
+<p>下面我们来介绍一下Posted  Interrupt Decsriptor，具体的format如下</p>
+<p><img alt="PID.png" src="images/PID.png">
+<center> 图3</center></p>
+<ul>
+<li>NDST ： Notification Destination</li>
+</ul>
+<p>表示中断要投递到的目标物理cpu APIC-ID(也就是vcpu所在的物理cpu)，这里又分为两种场景：一种是xAPIC的场景，bits 303:296表示 APIC Destionationdi[7:0]，一种是x2APIC场景，则 bits 319:288 表示APIC DestionationID[31:0]</p>
+<ul>
+<li>
+<p>NV：Notification Vector
+  这里的vector主要是用来做一些事件的通知，具体在后面的软件层的分析当中会详细介绍。</p>
+</li>
+<li>
+<p>SN：Suppress Notification</p>
+</li>
+</ul>
+<p>如果置位，则non-urgent的中断通知事件将会被抑制。</p>
+<ul>
+<li>ON：Outstanding Notificaion</li>
+</ul>
+<p>如果置位则表示有pending 的中断通知事件待处理，通常情况下ON位一般是软件即vmm侧清理，iommu硬件置位。</p>
+<ul>
+<li>PIR：Post Interrupt Request
+   用来记录中断请求的vector，大小为256 bits，每个bit表示一个vector。</li>
+</ul>
+<p>下面我们来看iommu硬件对posted interrupt 的处理流程：</p>
+<ul>
+<li>
+<p>硬件读取IRTE的IM field，如果为1则：</p>
+<ul>
+<li>硬件以posted interrupt的格式来解析IRTE</li>
+<li>从IRTE当中读取PID，vector value, URG</li>
+</ul>
+</li>
+<li>
+<p>硬件对posted-interrupt descriptor进行read-modify-write 原子操作具体流程如下</p>
+<ul>
+<li>iommu 硬件 ECAP_REG的MTS(memory type support)置1，且MTS为write-back(WB)。WB模式下对主存的读取或者写入操作时都会被cache。另外，对cache的写入并不会立即sync到主存里面，这些写入的内部会一直累积在cache当中，只有当需要释放cache空间时这些内容才会被写入到内存。</li>
+<li>硬件从PID读取相关的内容，同时将cache-line设置为E状态即当前的数据只存在于这个cache line当中且数据跟主存一致</li>
+<li>根据vector计算出PIR当中需要置上的位。</li>
+<li>计算X=((0N == 0) &amp;(URG|(SN == 0))) 的值，如果X == 1则设置ON位。</li>
+<li>让cache-line设置为全局可观察状态，这样其他的cache agent就可以嗅探到这个cache的相关修改。完成这一步之后在某些时候将cache的值写回主存。</li>
+</ul>
+</li>
+<li>
+<p>如果X == 1则具体的中断通知事件流程如下：</p>
+<ul>
+<li>硬件从NSDT field读取目标物理cpu的apic-id，从NV field拿到 notification interrupt 的中断vector。</li>
+<li>硬件格式化出一个notification interrupt，其中Delivery mode设置为Fixed(000b)，Re-direction Hint field被设置为0b，Trigger Mode 为Edge， Trigger Mode Level 为Asserted</li>
+<li>cpu收到notifcation之后如果此时vcpu在non-root模式，则vmx硬件会将pir对应的vector自动syc到vIRR当中(这个主要依赖于apicv，因此如果apicv没有使能的话则posted interrupt不能正常使用)，这样vcpu在non-root模式下就把这个中断处理了。</li>
+</ul>
+</li>
+</ul>
+<h4>软件使能</h4>
+<p>vmm会为每个vcpu(具体在per vcpu的vcpu_vmx数据结构当中)创建一个pi_desc的数据结构，具体如下</p>
+<div class="highlight"><pre><span></span><code><span class="nt">struct</span><span class="w"> </span><span class="nt">pi_desc</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="err">u32</span><span class="w"> </span><span class="err">pir</span><span class="cp">[</span><span class="mi">8</span><span class="cp">]</span><span class="p">;</span><span class="w">     </span><span class="c">/* Posted interrupt requested */</span>
+<span class="w">        </span><span class="err">union</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="err">struct</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                                </span><span class="c">/* bit 256 - Outstanding Notification */</span>
+<span class="w">                        </span><span class="err">u16</span><span class="w">     </span><span class="n">on</span><span class="w">      </span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">                                </span><span class="c">/* bit 257 - Suppress Notification */</span>
+<span class="w">                                </span><span class="n">sn</span><span class="w">      </span><span class="o">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">                                </span><span class="c">/* bit 271:258 - Reserved */</span>
+<span class="w">                                </span><span class="n">rsvd_1</span><span class="w">  </span><span class="o">:</span><span class="w"> </span><span class="mi">14</span><span class="p">;</span>
+<span class="w">                                </span><span class="c">/* bit 279:272 - Notification Vector */</span>
+<span class="w">                        </span><span class="err">u8</span><span class="w">      </span><span class="err">nv</span><span class="p">;</span>
+<span class="w">                                </span><span class="c">/* bit 287:280 - Reserved */</span>
+<span class="w">                        </span><span class="err">u8</span><span class="w">      </span><span class="err">rsvd_2</span><span class="p">;</span>
+<span class="w">                                </span><span class="c">/* bit 319:288 - Notification Destination */</span>
+<span class="w">                        </span><span class="err">u32</span><span class="w">     </span><span class="err">ndst</span><span class="p">;</span>
+<span class="w">                </span><span class="p">}</span><span class="o">;</span>
+<span class="w">                </span><span class="nt">u64</span><span class="w"> </span><span class="nt">control</span><span class="o">;</span>
+<span class="w">        </span><span class="err">}</span><span class="o">;</span>
+<span class="w">        </span><span class="nt">u32</span><span class="w"> </span><span class="nt">rsvd</span><span class="cp">[</span><span class="mi">6</span><span class="cp">]</span><span class="o">;</span>
+<span class="err">}</span><span class="w"> </span><span class="nt">__aligned</span><span class="o">(</span><span class="nt">64</span><span class="o">);</span>
+</code></pre></div>
+
+<p>上图的数据结构跟硬件定义是一一对应的。接着我们看一下posted interrupt的在软件层面的相关设置，在interrupt remapping 使能的时候会给硬件中断创建irqfd(建议大家先看一下<a href="https://mp.weixin.qq.com/s/xZyZmHZSOWwHkHTNLBmLeA">深入了解iommu系列四:interrupt remapping工作机制解析</a> 这篇文章)，其中有一个consumer</p>
+<div class="highlight"><pre><span></span><code><span class="n">irqfd</span><span class="o">-&gt;</span><span class="n">consumer</span><span class="p">.</span><span class="n">add_producer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">kvm_arch_irq_bypass_add_producer</span>
+</code></pre></div>
+
+<p>这个add_producer函数会调用<code>kvm_x86_ops-&gt;update_pi_irte</code> ，我们来看一下这个函数核心逻辑</p>
+<div class="highlight"><pre><span></span><code><span class="w">                </span><span class="cm">/*</span>
+<span class="cm">                 * VT-d PI cannot support posting multicast/broadcast</span>
+<span class="cm">                 * interrupts to a vCPU, we still use interrupt remapping</span>
+<span class="cm">                 * for these kind of interrupts.</span>
+<span class="cm">                 *</span>
+<span class="cm">                 * For lowest-priority interrupts, we only support</span>
+<span class="cm">                 * those with single CPU as the destination, e.g. user</span>
+<span class="cm">                 * configures the interrupts via /proc/irq or uses</span>
+<span class="cm">                 * irqbalance to make the interrupts single-CPU.</span>
+<span class="cm">                 *</span>
+<span class="cm">                 * We will support full lowest-priority interrupt later.</span>
+<span class="cm">                 */</span>
+
+<span class="w">                </span><span class="nx">kvm_set_msi_irq</span><span class="p">(</span><span class="nx">kvm</span><span class="p">,</span><span class="w"> </span><span class="nx">e</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">irq</span><span class="p">);</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(!</span><span class="nx">kvm_intr_is_single_vcpu</span><span class="p">(</span><span class="nx">kvm</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">irq</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">vcpu</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="cm">/*</span>
+<span class="cm">                         * Make sure the IRTE is in remapped mode if</span>
+<span class="cm">                         * we don&#39;t handle it in posted mode.</span>
+<span class="cm">                         */</span>
+<span class="w">                        </span><span class="nx">ret</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">irq_set_vcpu_affinity</span><span class="p">(</span><span class="nx">host_irq</span><span class="p">,</span><span class="w"> </span><span class="nx">NULL</span><span class="p">);</span>
+<span class="w">                        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">ret</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                                </span><span class="nx">printk</span><span class="p">(</span><span class="nx">KERN_INFO</span>
+<span class="w">                                   </span><span class="s">&quot;failed to back to remapped mode, irq: %u\n&quot;</span><span class="p">,</span>
+<span class="w">                                   </span><span class="nx">host_irq</span><span class="p">);</span>
+<span class="w">                                </span><span class="nx">goto</span><span class="w"> </span><span class="nx">out</span><span class="p">;</span>
+<span class="w">                        </span><span class="p">}</span>
+
+<span class="w">                        </span><span class="k">continue</span><span class="p">;</span>
+<span class="w">                </span><span class="p">}</span>
+
+<span class="w">                </span><span class="nx">vcpu_info</span><span class="p">.</span><span class="nx">pi_desc_addr</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">__pa</span><span class="p">(</span><span class="nx">vcpu_to_pi_desc</span><span class="p">(</span><span class="nx">vcpu</span><span class="p">));</span>
+<span class="w">                </span><span class="nx">vcpu_info</span><span class="p">.</span><span class="nx">vector</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">irq</span><span class="p">.</span><span class="nx">vector</span><span class="p">;</span>
+
+<span class="w">                </span><span class="nx">trace_kvm_pi_irte_update</span><span class="p">(</span><span class="nx">host_irq</span><span class="p">,</span><span class="w"> </span><span class="nx">vcpu</span><span class="o">-&gt;</span><span class="nx">vcpu_id</span><span class="p">,</span><span class="w"> </span><span class="nx">e</span><span class="o">-&gt;</span><span class="nx">gsi</span><span class="p">,</span>
+<span class="w">                                </span><span class="nx">vcpu_info</span><span class="p">.</span><span class="nx">vector</span><span class="p">,</span><span class="w"> </span><span class="nx">vcpu_info</span><span class="p">.</span><span class="nx">pi_desc_addr</span><span class="p">,</span><span class="w"> </span><span class="nx">set</span><span class="p">);</span>
+
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">set</span><span class="p">)</span>
+<span class="w">                        </span><span class="nx">ret</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">irq_set_vcpu_affinity</span><span class="p">(</span><span class="nx">host_irq</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">vcpu_info</span><span class="p">);</span>
+<span class="w">                </span><span class="k">else</span>
+<span class="w">                        </span><span class="nx">ret</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">irq_set_vcpu_affinity</span><span class="p">(</span><span class="nx">host_irq</span><span class="p">,</span><span class="w"> </span><span class="nx">NULL</span><span class="p">);</span>
+</code></pre></div>
+
+<p>上面的逻辑截取至 <code>vmx_update_pi_irte</code> 函数，首先posted interrupt只支持msi 或者msix中断，其次多播和广播的中断也是posted interrupt不支持的。所以函数逻辑首先判断中断注入对象是不是single vcpu，如果不是则还是要走 remapped mode。如果是则开始对PID 相关的数据结构进行初始化，从这里面也能看到vector也就是需要注入到guest当中的中断向量。接着如果set为true则调用<code>irq_set_vcpu_affinity</code>， 这个函数最终会调到这个irq所属于的irq chip的</p>
+<div class="highlight"><pre><span></span><code><span class="n">chip</span><span class="o">-&gt;</span><span class="n">irq_set_vcpu_affinity</span><span class="p">(</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="n">vcpu_info</span><span class="p">)</span>
+</code></pre></div>
+
+<p>从 interrupt remapping的那篇文章我们知道这个chip是 <code>intel_ir_chip</code> ，因此对应的具体的callback函数为 <code>intel_ir_set_vcpu_affinity</code>。接下来看一下这个函数的具体逻辑</p>
+<div class="highlight"><pre><span></span><code><span class="nx">static</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="nx">intel_ir_set_vcpu_affinity</span><span class="p">(</span><span class="nx">struct</span><span class="w"> </span><span class="nx">irq_data</span><span class="w"> </span><span class="o">*</span><span class="nx">data</span><span class="p">,</span><span class="w"> </span><span class="nx">void</span><span class="w"> </span><span class="o">*</span><span class="nx">info</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">intel_ir_data</span><span class="w"> </span><span class="o">*</span><span class="nx">ir_data</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">data</span><span class="o">-&gt;</span><span class="nx">chip_data</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">vcpu_data</span><span class="w"> </span><span class="o">*</span><span class="nx">vcpu_pi_info</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">info</span><span class="p">;</span>
+
+<span class="w">        </span><span class="cm">/* stop posting interrupts, back to remapping mode */</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(!</span><span class="nx">vcpu_pi_info</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nx">modify_irte</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">ir_data</span><span class="o">-&gt;</span><span class="nx">irq_2_iommu</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">ir_data</span><span class="o">-&gt;</span><span class="nx">irte_entry</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nx">struct</span><span class="w"> </span><span class="nx">irte</span><span class="w"> </span><span class="nx">irte_pi</span><span class="p">;</span>
+
+<span class="w">                </span><span class="cm">/*</span>
+<span class="cm">                 * We are not caching the posted interrupt entry. We</span>
+<span class="cm">                 * copy the data from the remapped entry and modify</span>
+<span class="cm">                 * the fields which are relevant for posted mode. The</span>
+<span class="cm">                 * cached remapped entry is used for switching back to</span>
+<span class="cm">                 * remapped mode.</span>
+<span class="cm">                 */</span>
+<span class="w">                </span><span class="nx">memset</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">irte_pi</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nx">sizeof</span><span class="p">(</span><span class="nx">irte_pi</span><span class="p">));</span>
+<span class="w">                </span><span class="nx">dmar_copy_shared_irte</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">irte_pi</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">ir_data</span><span class="o">-&gt;</span><span class="nx">irte_entry</span><span class="p">);</span>
+
+<span class="w">                </span><span class="cm">/* Update the posted mode fields */</span>
+<span class="w">                </span><span class="nx">irte_pi</span><span class="p">.</span><span class="nx">p_pst</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">                </span><span class="nx">irte_pi</span><span class="p">.</span><span class="nx">p_urgent</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="w">                </span><span class="nx">irte_pi</span><span class="p">.</span><span class="nx">p_vector</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">vcpu_pi_info</span><span class="o">-&gt;</span><span class="nx">vector</span><span class="p">;</span>
+<span class="w">                </span><span class="nx">irte_pi</span><span class="p">.</span><span class="nx">pda_l</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">(</span><span class="nx">vcpu_pi_info</span><span class="o">-&gt;</span><span class="nx">pi_desc_addr</span><span class="w"> </span><span class="o">&gt;&gt;</span>
+<span class="w">                                </span><span class="p">(</span><span class="mi">32</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nx">PDA_LOW_BIT</span><span class="p">))</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="o">~</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="nx">UL</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="nx">PDA_LOW_BIT</span><span class="p">);</span>
+<span class="w">                </span><span class="nx">irte_pi</span><span class="p">.</span><span class="nx">pda_h</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">(</span><span class="nx">vcpu_pi_info</span><span class="o">-&gt;</span><span class="nx">pi_desc_addr</span><span class="w"> </span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;</span>
+<span class="w">                                </span><span class="o">~</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="nx">UL</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="nx">PDA_HIGH_BIT</span><span class="p">);</span>
+
+<span class="w">                </span><span class="nx">modify_irte</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">ir_data</span><span class="o">-&gt;</span><span class="nx">irq_2_iommu</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">irte_pi</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>在这个函数实现里面，<code>irq_data-&gt;irte_entry</code>里面仍然是remapped mode，然后通过copy一份副本将其修改成 posted mode，最后通过<code>modify_irte</code> 这个函数将irte写入到iommu硬件当中。至此，posted interrupt mode的irte 设置成功。</p>
+<p>说完posted interrupt mode irte设置之后，下面我们来讲一下vmm 是如何使用 posted interrupt来delivery 中断的。这里需要再多讲几句，posted interrupt 应用场景有两类：一类是直通设备场景硬件直接将设备中断注入到guest里面，另外一类是vmm侧通过posted interrupt机制来实现模拟设备的中断注入比如virtio设备。先说说直通设备的场景，<strong>在这种场景下中断注入完全不需要vmm参与，整个流程完全由硬件完成(前提是说vcpu刚好处于non-root模式)</strong>。但是有没有想过设备在注入中断的的时候刚好vcpu在root模式下这个时候要怎么操作呢？这个就涉及到vcpu状态跟interrupt remapping硬件之间的同步了。接下来我们就来看一下硬件中断注入与vcpu 所处于的运行状态之间是如何同步的(vcpu running状态这里就不讲了)。</p>
+<ul>
+<li>
+<p>vcpu 被抢占
+vcpu线程退到root模式时可能会被高优先级的任务抢占，在这个过程当中在vmm侧与posted interrput有关的核心逻辑为<code>vmx_sched_out-&gt;vcpu_put-&gt;vmx_vcpu_pi_put</code> ，其中vmx_vcpu_pi_put会将SN置上，那么在这种场景下硬件就不会触发notification interrupt 给相应的cpu。</p>
+</li>
+<li>
+<p>vcpu 再次被调度
+vcpu 进程再次被调度的时候，在vmm侧的核心逻辑为<code>vmx_sched_in-&gt;vcpu_load-&gt;vmx_vcpu_pi_load</code>，下面来看一下 <code>vmx_vcpu_pi_load</code> 这个函数核心逻辑在于如果vcpu当前运行的cpu跟之前的cpu不一样则需要更新pid_desc当中的NDST位，另外如果sn位被置上则需要clean掉。这里有个问题就是当vmm侧在修改的时候可能iommu的硬件侧也可能在修改，因此为了解决这个问题在实现当中使用了cmpxchg64函数来实现atomic read-modify-write。</p>
+</li>
+</ul>
+<div class="highlight"><pre><span></span><code>......
+        /* The full case.  */
+        do {
+                old.control = new.control = pi_desc-&gt;control;
+
+                dest = cpu_physical_id(cpu);
+
+                if (x2apic_enabled())
+                        new.ndst = dest;
+                else
+                        new.ndst = (dest &lt;&lt; 8) &amp; 0xFF00;
+
+                new.sn = 0;
+        } while (cmpxchg64(&amp;pi_desc-&gt;control, old.control,
+                           new.control) != old.control);
+......
+</code></pre></div>
+
+<ul>
+<li>vcpu block状态
+当vcpu 主动halt出来时会进入block，再进入到真正block之前会有一个pre block的操作。在这个过程会调用<code>pi_pre_block</code> 函数对pir_desc当中相关field进行修正，下面来看一下这个函数的具体逻辑：</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="w"> </span><span class="n">local_irq_disable</span><span class="p">();</span>
+<span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">WARN_ON_ONCE</span><span class="p">(</span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">pre_pcpu</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">pre_pcpu</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">cpu</span><span class="p">;</span>
+<span class="w">                </span><span class="n">spin_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">per_cpu</span><span class="p">(</span><span class="n">blocked_vcpu_on_cpu_lock</span><span class="p">,</span><span class="w"> </span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">pre_pcpu</span><span class="p">));</span>
+<span class="w">                </span><span class="n">list_add_tail</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">blocked_vcpu_list</span><span class="p">,</span>
+<span class="w">                              </span><span class="o">&amp;</span><span class="n">per_cpu</span><span class="p">(</span><span class="n">blocked_vcpu_on_cpu</span><span class="p">,</span>
+<span class="w">                                       </span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">pre_pcpu</span><span class="p">));</span>
+<span class="w">                </span><span class="n">spin_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">per_cpu</span><span class="p">(</span><span class="n">blocked_vcpu_on_cpu_lock</span><span class="p">,</span><span class="w"> </span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">pre_pcpu</span><span class="p">));</span>
+<span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+
+<p>这部分逻辑是判断vcpu的pre_cpu是否为-1(default value 为-1)，如果不为-1则打个warning stack；如果为-1则将pre_cpu赋值为当前vcpu所在的物理cpu，并且把vcpu放入到这个物理cpu的 block_vcpu_list当中。接着往下看</p>
+<div class="highlight"><pre><span></span><code><span class="w">        </span><span class="nt">do</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="err">old.control</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">new.control</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">pi_desc-&gt;control</span><span class="p">;</span>
+
+<span class="w">                </span><span class="err">WARN((pi_desc-&gt;sn</span><span class="w"> </span><span class="err">==</span><span class="w"> </span><span class="err">1),</span>
+<span class="w">                     </span><span class="err">&quot;</span><span class="n">Warning</span><span class="p">:</span><span class="w"> </span><span class="n">SN</span><span class="w"> </span><span class="n">field</span><span class="w"> </span><span class="n">of</span><span class="w"> </span><span class="n">posted-interrupts</span><span class="w"> </span><span class="s2">&quot;</span>
+<span class="s2">                     &quot;</span><span class="n">is</span><span class="w"> </span><span class="n">set</span><span class="w"> </span><span class="n">before</span><span class="w"> </span><span class="n">blocking</span><span class="err">\</span><span class="n">n</span><span class="err">&quot;</span><span class="p">);</span>
+
+<span class="w">                </span><span class="c">/*</span>
+<span class="c">                 * Since vCPU can be preempted during this process,</span>
+<span class="c">                 * vcpu-&gt;cpu could be different with pre_pcpu, we</span>
+<span class="c">                 * need to set pre_pcpu as the destination of wakeup</span>
+<span class="c">                 * notification event, then we can find the right vCPU</span>
+<span class="c">                 * to wakeup in wakeup handler if interrupts happen</span>
+<span class="c">                 * when the vCPU is in blocked state.</span>
+<span class="c">                 */</span>
+<span class="w">                </span><span class="err">dest</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">cpu_physical_id(vcpu-&gt;pre_pcpu)</span><span class="p">;</span>
+
+<span class="w">                </span><span class="err">if</span><span class="w"> </span><span class="err">(x2apic_enabled())</span>
+<span class="w">                        </span><span class="err">new.ndst</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">dest</span><span class="p">;</span>
+<span class="w">                </span><span class="err">else</span>
+<span class="w">                        </span><span class="err">new.ndst</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">(dest</span><span class="w"> </span><span class="err">&lt;&lt;</span><span class="w"> </span><span class="err">8)</span><span class="w"> </span><span class="err">&amp;</span><span class="w"> </span><span class="err">0xFF00</span><span class="p">;</span>
+
+<span class="w">                </span><span class="c">/* set &#39;NV&#39; to &#39;wakeup vector&#39; */</span>
+<span class="w">                </span><span class="err">new.nv</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">POSTED_INTR_WAKEUP_VECTOR</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="nt">while</span><span class="w"> </span><span class="o">(</span><span class="nt">cmpxchg64</span><span class="o">(&amp;</span><span class="nt">pi_desc-</span><span class="o">&gt;</span><span class="nt">control</span><span class="o">,</span><span class="w"> </span><span class="nt">old</span><span class="p">.</span><span class="nc">control</span><span class="o">,</span>
+<span class="w">                           </span><span class="nt">new</span><span class="p">.</span><span class="nc">control</span><span class="o">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nt">old</span><span class="p">.</span><span class="nc">control</span><span class="o">);</span>
+</code></pre></div>
+
+<p>这部分逻辑当中首先判断SN是否被置上，如果置上则打印一下warning。原因是说vcpu是主动halt出来并不是被抢占的所以理论是不会走到pi_put的相关逻辑的，但是也不影响正常功能所以只是warning一下。接着仍然是通过cmpxchg64这个原子操作将NDST设置为pre_pcpu，同时将nv设置为<code>POSTED_INTR_WAKEUP_VECTOR</code> 。这里多说几句nv即notification vector有两种：一种就是 <code>POSTED_INTR_VECTOR</code> 即当cpu收到这个中断时如果vcpu处于non-root时则vmx硬件把自动把pir sync到virr即在non-root模式将中断处理掉；另外一种就是前面提到的<code>POSTED_INTR_WAKEUP_VECTOR</code> ，当cpu收到这个中断是就会把block在该pcpu上的block_vcpu_list上的vcpu唤醒，然后在vmentry过程中将中断注入到vm当中，至于这个具体的注入逻辑将在后面进行具体介绍。</p>
+<div class="highlight"><pre><span></span><code><span class="w">     </span><span class="o">/*</span><span class="w"> </span><span class="n">We</span><span class="w"> </span><span class="n">should</span><span class="w"> </span><span class="n">not</span><span class="w"> </span><span class="n">block</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">vCPU</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">an</span><span class="w"> </span><span class="n">interrupt</span><span class="w"> </span><span class="n">is</span><span class="w"> </span><span class="n">posted</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">it</span><span class="p">.</span><span class="w">  </span><span class="o">*/</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">pi_test_on</span><span class="p">(</span><span class="n">pi_desc</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span>
+<span class="w">                </span><span class="n">__pi_post_block</span><span class="p">(</span><span class="n">vcpu</span><span class="p">);</span>
+<span class="w">        </span><span class="n">local_irq_enable</span><span class="p">();</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">pre_pcpu</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>上面的逻辑比较简单，如果硬件已经将on设置上说明硬件侧准备发送notification interrupt了，所以不能让vcpu进行block状态，这里有调用<code>__pi_post_block(vcpu)</code>， 下面我们来讲一下这个函数。</p>
+<p>当vcpu结束block状态时在post_block阶段也会调用<code>__pi_post_block(vcpu)</code> ，具体实现如下</p>
+<div class="highlight"><pre><span></span><code>static void __pi_post_block(struct kvm_vcpu *vcpu)
+{
+        struct pi_desc <span class="gs">*pi_desc = vcpu_to_pi_desc(vcpu);</span>
+<span class="gs">        struct pi_desc old, new;</span>
+<span class="gs">        unsigned int dest;</span>
+
+<span class="gs">        do {</span>
+<span class="gs">                old.control = new.control = pi_desc-&gt;control;</span>
+<span class="gs">                WARN(old.nv != POSTED_INTR_WAKEUP_VECTOR,</span>
+<span class="gs">                     &quot;Wakeup handler not enabled while the VCPU is blocked\n&quot;);</span>
+
+<span class="gs">                dest = cpu_physical_id(vcpu-&gt;cpu);</span>
+
+<span class="gs">                if (x2apic_enabled())</span>
+<span class="gs">                        new.ndst = dest;</span>
+<span class="gs">                else</span>
+<span class="gs">                        new.ndst = (dest &lt;&lt; 8) &amp; 0xFF00;</span>
+
+<span class="gs">                /*</span> set &#39;NV&#39; to &#39;notification vector&#39; */
+                new.nv = POSTED_INTR_VECTOR;
+        } while (cmpxchg64(&amp;pi_desc-&gt;control, old.control,
+                           new.control) != old.control);
+
+        if (!WARN_ON_ONCE(vcpu-&gt;pre_pcpu == -1)) {
+                spin_lock(&amp;per_cpu(blocked_vcpu_on_cpu_lock, vcpu-&gt;pre_pcpu));
+                list_del(&amp;vcpu-&gt;blocked_vcpu_list);
+                spin_unlock(&amp;per_cpu(blocked_vcpu_on_cpu_lock, vcpu-&gt;pre_pcpu));
+                vcpu-&gt;pre_pcpu = -1;
+        }
+}
+</code></pre></div>
+
+<p>看一下这个函数的具体逻辑：先将pi_desc的NDST设置为vcpu当前要运行的物理cpu，将nv设置为<code>POSTED_INTR_VECTOR</code> ，然后如果<code>vcpu-&gt;pre_pcpu</code> 不是-1则vcpu从该物理cpu的blocked_vcpu_list当中删除掉，然后将pre_pcpu再重置为-1。</p>
+<p>上面花了点篇幅介绍了一下在vcpu处于不同运行状态时是如何跟posted interrupt 硬件之间同步相关信息的。但是这种同步并不能保证严格意义上的一致性，即iommu硬件发出<code>POSTED_INTR_VECTOR</code> 时vcpu可能处于root模式，那在这种情况下要如何处理呢？首先，内核是注册了这个vector的中断处理函数的即系统是能够响应这个中断的只是说这个vector的中断处理函数为空；其次当vcpu再次进入到vm时会将pir sync到virr当中即中断也不会丢，唯一影响的可能就是中断处理的实时性。</p>
+<p>回到vmm侧如何通过posted interrupt 机制delivery 模拟设备的中断。以virtio设备为例，virtio设备主要是通过irqfd来触发中断(irqfd的setup流程这里就不细讲了)，整个中断的触发流程如下</p>
+<div class="highlight"><pre><span></span><code><span class="n">irqfd_inject</span><span class="o">-&gt;</span><span class="n">kvm_set_irq</span><span class="o">-&gt;</span>
+<span class="w">                </span><span class="n">kvm_set_msi</span><span class="o">-&gt;</span><span class="n">kvm_irq_delivery_to_apic</span>
+</code></pre></div>
+
+<p>最终会调到 <code>__apic_accept_irq-&gt;deliver_posted_interrupt-&gt;vmx_deliver_posted_interrupt</code></p>
+<div class="highlight"><pre><span></span><code>static void vmx_deliver_posted_interrupt(struct kvm_vcpu *vcpu, int vector)
+{
+        struct vcpu_vmx <span class="gs">*vmx = to_vmx(vcpu);</span>
+<span class="gs">        int r;</span>
+
+<span class="gs">        r = vmx_deliver_nested_posted_interrupt(vcpu, vector);</span>
+<span class="gs">        if (!r)</span>
+<span class="gs">                return;</span>
+
+<span class="gs">        if (pi_test_and_set_pir(vector, vmx-&gt;pi_desc))</span>
+<span class="gs">                return;</span>
+<span class="gs">        /*</span> If a previous notification has sent the IPI, nothing to do.  */
+        if (pi_test_and_set_on(vmx-&gt;pi_desc))
+                return;
+
+        if (!kvm_vcpu_trigger_posted_interrupt(vcpu, false))
+                kvm_vcpu_kick(vcpu);
+}
+</code></pre></div>
+
+<p>看一下上面函数的具体实现：如果是nested模式下则走nested posted interrupt，接着在软件侧模仿pi 硬件的相关操作如设置pir，置on位；如果这两个都已经设置过了则说明已经有一个中断流程在进行当中了(irqfd是可以连续触发的)，接着看一下<code>kvm_vcpu_trigger_posted_interrupt</code> </p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="nf">kvm_vcpu_trigger_posted_interrupt</span><span class="p">(</span><span class="k">struct</span><span class="w"> </span><span class="nc">kvm_vcpu</span><span class="w"> </span><span class="o">*</span><span class="n">vcpu</span><span class="p">,</span>
+<span class="w">                                                     </span><span class="kt">bool</span><span class="w"> </span><span class="n">nested</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="cp">#ifdef CONFIG_SMP</span>
+<span class="w">        </span><span class="kt">int</span><span class="w"> </span><span class="n">pi_vec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">nested</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">POSTED_INTR_NESTED_VECTOR</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">POSTED_INTR_VECTOR</span><span class="p">;</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">mode</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">IN_GUEST_MODE</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="cm">/*</span>
+<span class="cm">                 * The vector of interrupt to be delivered to vcpu had</span>
+<span class="cm">                 * been set in PIR before this function.</span>
+<span class="cm">                 *</span>
+<span class="cm">                 * Following cases will be reached in this block, and</span>
+<span class="cm">                 * we always send a notification event in all cases as</span>
+<span class="cm">                 * explained below.</span>
+<span class="cm">                 *</span>
+<span class="cm">                 * Case 1: vcpu keeps in non-root mode. Sending a</span>
+<span class="cm">                 * notification event posts the interrupt to vcpu.</span>
+<span class="cm">                 *</span>
+<span class="cm">                 * Case 2: vcpu exits to root mode and is still</span>
+<span class="cm">                 * runnable. PIR will be synced to vIRR before the</span>
+<span class="cm">                 * next vcpu entry. Sending a notification event in</span>
+<span class="cm">                 * this case has no effect, as vcpu is not in root</span>
+<span class="cm">                 * mode.</span>
+<span class="cm">                 *</span>
+<span class="cm">                 * Case 3: vcpu exits to root mode and is blocked.</span>
+<span class="cm">                 * vcpu_block() has already synced PIR to vIRR and</span>
+<span class="cm">                 * never blocks vcpu if vIRR is not cleared. Therefore,</span>
+<span class="cm">                 * a blocked vcpu here does not wait for any requested</span>
+<span class="cm">                 * interrupts in PIR, and sending a notification event</span>
+<span class="cm">                 * which has no effect is safe here.</span>
+<span class="cm">                 */</span>
+
+<span class="w">                </span><span class="n">apic</span><span class="o">-&gt;</span><span class="n">send_IPI_mask</span><span class="p">(</span><span class="n">get_cpu_mask</span><span class="p">(</span><span class="n">vcpu</span><span class="o">-&gt;</span><span class="n">cpu</span><span class="p">),</span><span class="w"> </span><span class="n">pi_vec</span><span class="p">);</span>
+<span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="cp">#endif</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>函数当中的注释已经说的比较清楚，这里简单说几句。如果目标vcpu在non-root模式，则通过给该vcpu所在的物理cpu发送<code>POSTED_INTR_VECTOR</code>(模拟pi硬件的行为) ，然后在non-root模式下将中断处理掉。如果vcpu在root模式，则通过<code>kvm_vcpu_kick</code>将vcpu唤醒，然后vcpu在vmentry的过程中会将中断处理掉，具体可以仔细阅读一下这个函数<code>kvm_x86_ops-&gt;sync_pir_to_irr</code> 。</p>
+<h4>总结和扩展</h4>
+<p>posted interrupt 机制提升了虚拟化场景下直通设备的中断注入效率，同时利用这种机制我们也可以减少其他中断场景的开销，比如字节虚拟化同学基于posted interrupt机制提出的pvipi方案，其性能比目前intel 的ipi virtualizaion 性能要好很多。当然，还有其他一些比较有意思的玩法，后面有机会我们也会对外expose。</p>
+<h5>Reference</h5>
+<ul>
+<li>Minimizing VMExits in Private Cloud by Aggressive PV IPI and Passthrough Timer - Qiao Hua &amp; Zhou Yibo, ByteDance</li>
+<li>https://patchwork.kernel.org/project/kvm/patch/0C23CC2D-B770-43D0-8215-20CE591F2E8F@bytedance.com/</li>
+</ul>
+
+
+             
+ 
+            
+            
+            
+
+
+
+
+
+
+            <hr/>
+        </div>
+        <section id="article-sidebar" class="span2">
+            <h4>Published</h4>
+            <time itemprop="dateCreated" datetime="2022-04-26T00:00:00+08:00"> 4 26, 2022</time>
+            <h4>Category</h4>
+            <a class="category-link" href="/categories.html#articles-ref">articles</a>
+            <h4>Tags</h4>
+            <ul class="list-of-tags tags-in-article">
+                <li><a href="/tags.html#interrupt-posting-ref">interrupt posting
+                    <span>1</span>
+</a></li>
+                <li><a href="/tags.html#iommu-ref">iommu
+                    <span>5</span>
+</a></li>
+            </ul>
+            
+
+
+
+
+
+            
+
+
+
+
+
+        </section>
+</div>
+</article>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
+<footer>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>            <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+
+    <script>
+    (function () {
+        if (window.location.hash.match(/^#comment-\d+$/)) {
+            $('#comment_thread').collapse('show');
+        }
+    })();
+    window.onhashchange=function(){
+        if (window.location.hash.match(/^#comment-\d+$/))
+            window.location.reload(true);
+    }
+    $('#comment_thread').on('shown', function () {
+        var link = document.getElementById('comment-accordion-toggle');
+        var old_innerHTML = link.innerHTML;
+        $(link).fadeOut(200, function() {
+            $(this).text('Click here to hide comments').fadeIn(200);
+        });
+        $('#comment_thread').on('hidden', function () {
+            $(link).fadeOut(200, function() {
+                $(this).text(old_innerHTML).fadeIn(200);
+            });
+        })
+    })
+</script>
+
+    </body>
+    <!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>
