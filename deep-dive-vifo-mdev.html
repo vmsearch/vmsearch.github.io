@@ -12,7 +12,7 @@
 <meta name="keywords" content="vfio, articles, " />
 
 <meta property="og:title" content="聊聊vfio mdev工作原理 "/>
-<meta property="og:url" content="/deep-dive-vifo-mdev.html" />
+<meta property="og:url" content="https://kernelnote.com/deep-dive-vifo-mdev.html" />
 <meta property="og:description" content="序言 虚拟化场景下，有时为了提升虚拟机io性能通常会选择把设备直通给vm。设备直通要么使用设备的SRIOV或者SIOV能力，要么把整个设备都通给虚拟机。有些场景下，为了 …" />
 <meta property="og:site_name" content="kernelnote" />
 <meta property="og:article:author" content="duma" />
@@ -23,8 +23,8 @@
         <title>聊聊vfio mdev工作原理  · kernelnote
 </title>
         <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
-        <link rel="stylesheet" type="text/css" href="/theme/css/elegant.prod.css" media="screen">
-        <link rel="stylesheet" type="text/css" href="/theme/css/custom.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="https://kernelnote.com/theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="https://kernelnote.com/theme/css/custom.css" media="screen">
 
 
 
@@ -39,19 +39,19 @@
                             <span class="icon-bar"></span>
                             <span class="icon-bar"></span>
                         </a>
-                        <a class="brand" href="/"><span class=site-name>kernelnote</span></a>
+                        <a class="brand" href="https://kernelnote.com/"><span class=site-name>kernelnote</span></a>
                         <div class="nav-collapse collapse">
                             <ul class="nav pull-right top-menu">
                                 <li >
                                     <a href=
-                                       "/"
+                                       https://kernelnote.com
                                     >Home</a>
                                 </li>
-                                <li ><a href="/pages/about.html">about</a></li>
-                                <li ><a href="/categories.html">Categories</a></li>
-                                <li ><a href="/tags.html">Tags</a></li>
-                                <li ><a href="/archives.html">Archives</a></li>
-                                <li><form class="navbar-search" action="/search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                                <li ><a href="https://kernelnote.com/pages/about.html">about</a></li>
+                                <li ><a href="https://kernelnote.com/categories.html">Categories</a></li>
+                                <li ><a href="https://kernelnote.com/tags.html">Tags</a></li>
+                                <li ><a href="https://kernelnote.com/archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="https://kernelnote.com/search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
                             </ul>
                         </div>
                     </div>
@@ -65,7 +65,7 @@
 <div class="row-fluid">
     <header class="page-header span10 offset2">
         <h1>
-            <a href="/deep-dive-vifo-mdev.html">
+            <a href="https://kernelnote.com/deep-dive-vifo-mdev.html">
                 聊聊vfio mdev工作原理
             </a>
         </h1>
@@ -351,10 +351,10 @@
             <h4>Published</h4>
             <time itemprop="dateCreated" datetime="2022-05-31T20:30:00+08:00"> 5 31, 2022</time>
             <h4>Category</h4>
-            <a class="category-link" href="/categories.html#articles-ref">articles</a>
+            <a class="category-link" href="https://kernelnote.com/categories.html#articles-ref">articles</a>
             <h4>Tags</h4>
             <ul class="list-of-tags tags-in-article">
-                <li><a href="/tags.html#vfio-ref">vfio
+                <li><a href="https://kernelnote.com/tags.html#vfio-ref">vfio
                     <span>1</span>
 </a></li>
             </ul>

@@ -4,175 +4,175 @@ xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitem
 xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
 <url>
-<loc>/</loc>
-<lastmod>2024-03-24T21:29:17-00:00</lastmod>
+<loc>https://kernelnote.com/</loc>
+<lastmod>2024-03-25T21:58:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tags.html</loc>
-<lastmod>2024-03-24T21:29:17-00:00</lastmod>
+<loc>https://kernelnote.com/tags.html</loc>
+<lastmod>2024-03-25T21:58:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/categories.html</loc>
-<lastmod>2024-03-24T21:29:17-00:00</lastmod>
+<loc>https://kernelnote.com/categories.html</loc>
+<lastmod>2024-03-25T21:58:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/authors.html</loc>
-<lastmod>2024-03-24T21:29:17-00:00</lastmod>
+<loc>https://kernelnote.com/authors.html</loc>
+<lastmod>2024-03-25T21:58:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/archives.html</loc>
-<lastmod>2024-03-24T21:29:17-00:00</lastmod>
+<loc>https://kernelnote.com/archives.html</loc>
+<lastmod>2024-03-25T21:58:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/pages/about.html</loc>
+<loc>https://kernelnote.com/pages/about.html</loc>
 <lastmod>2022-01-15T22:34:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.3</priority>
 </url>
 
 <url>
-<loc>/deep-dive-vifo-mdev.html</loc>
+<loc>https://kernelnote.com/deep-dive-vifo-mdev.html</loc>
 <lastmod>2022-05-31T20:30:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
 
 <url>
-<loc>/iommu-posted-interrupt-deep-dive.html</loc>
+<loc>https://kernelnote.com/iommu-posted-interrupt-deep-dive.html</loc>
 <lastmod>2022-04-26T00:00:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
 
 <url>
-<loc>/deep-dive-how-interrup-remapping-work.html</loc>
+<loc>https://kernelnote.com/deep-dive-how-interrup-remapping-work.html</loc>
 <lastmod>2022-03-05T00:00:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
 
 <url>
-<loc>/deep-dive-iommu-interrupt-remapping.html</loc>
+<loc>https://kernelnote.com/deep-dive-iommu-interrupt-remapping.html</loc>
 <lastmod>2022-02-15T00:00:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
 
 <url>
-<loc>/deep-dive-iommu-dma-remapping.html</loc>
+<loc>https://kernelnote.com/deep-dive-iommu-dma-remapping.html</loc>
 <lastmod>2022-02-06T00:00:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
 
 <url>
-<loc>/deep-dive-iommu-hardware-driver.html</loc>
+<loc>https://kernelnote.com/deep-dive-iommu-hardware-driver.html</loc>
 <lastmod>2022-01-18T20:14:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
 
 <url>
-<loc>/something-about-pcie.html</loc>
+<loc>https://kernelnote.com/something-about-pcie.html</loc>
 <lastmod>2021-12-12T15:24:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
 
 <url>
-<loc>/deep-dive-on-aws-graviton3.html</loc>
+<loc>https://kernelnote.com/deep-dive-on-aws-graviton3.html</loc>
 <lastmod>2021-12-08T22:45:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
 
 <url>
-<loc>/category/articles.html</loc>
+<loc>https://kernelnote.com/category/articles.html</loc>
 <lastmod>2022-05-31T20:30:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tag/vfio.html</loc>
+<loc>https://kernelnote.com/tag/vfio.html</loc>
 <lastmod>2022-05-31T20:30:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tag/iommu.html</loc>
+<loc>https://kernelnote.com/tag/iommu.html</loc>
 <lastmod>2022-04-26T00:00:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tag/interrupt-posting.html</loc>
+<loc>https://kernelnote.com/tag/interrupt-posting.html</loc>
 <lastmod>2022-04-26T00:00:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tag/interrut-remapping.html</loc>
+<loc>https://kernelnote.com/tag/interrut-remapping.html</loc>
 <lastmod>2022-03-05T00:00:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tag/interrupt-remapping.html</loc>
+<loc>https://kernelnote.com/tag/interrupt-remapping.html</loc>
 <lastmod>2022-02-15T00:00:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tag/pci.html</loc>
+<loc>https://kernelnote.com/tag/pci.html</loc>
 <lastmod>2021-12-12T15:24:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tag/pcie.html</loc>
+<loc>https://kernelnote.com/tag/pcie.html</loc>
 <lastmod>2021-12-12T15:24:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tag/aws.html</loc>
+<loc>https://kernelnote.com/tag/aws.html</loc>
 <lastmod>2021-12-08T22:45:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/tag/aws-graviton3.html</loc>
+<loc>https://kernelnote.com/tag/aws-graviton3.html</loc>
 <lastmod>2021-12-08T22:45:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
-<loc>/author/duma.html</loc>
+<loc>https://kernelnote.com/author/duma.html</loc>
 <lastmod>2022-05-31T20:30:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
