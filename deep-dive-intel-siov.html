@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh_cn">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="SIOV, articles, " />
+
+<meta property="og:title" content="聊聊intel平台io 虚拟化技术之 siov "/>
+<meta property="og:url" content="https://kernelnote.com/deep-dive-intel-siov.html" />
+<meta property="og:description" content="序言 首先需要说明的是这并不是一项很新的技术，因为早在2017年intel就对外expose了相关的spec。但是直到今天仍然还是停留在spec层面，不过好在随着intel SPR平台的推出intel也终于下定决心要enable这个feature了(其主 …" />
+<meta property="og:site_name" content="kernelnote" />
+<meta property="og:article:author" content="duma" />
+<meta property="og:article:published_time" content="2022-03-26T00:00:00+08:00" />
+<meta name="twitter:title" content="聊聊intel平台io 虚拟化技术之 siov ">
+<meta name="twitter:description" content="序言 首先需要说明的是这并不是一项很新的技术，因为早在2017年intel就对外expose了相关的spec。但是直到今天仍然还是停留在spec层面，不过好在随着intel SPR平台的推出intel也终于下定决心要enable这个feature了(其主 …">
+
+        <title>聊聊intel平台io 虚拟化技术之 siov  · kernelnote
+</title>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="https://kernelnote.com/theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="https://kernelnote.com/theme/css/custom.css" media="screen">
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="https://kernelnote.com/"><span class=site-name>kernelnote</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       https://kernelnote.com
+                                    >Home</a>
+                                </li>
+                                <li ><a href="https://kernelnote.com/pages/about.html">about</a></li>
+                                <li ><a href="https://kernelnote.com/categories.html">Categories</a></li>
+                                <li ><a href="https://kernelnote.com/tags.html">Tags</a></li>
+                                <li ><a href="https://kernelnote.com/archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="https://kernelnote.com/search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<article itemscope>
+<div class="row-fluid">
+    <header class="page-header span10 offset2">
+        <h1>
+            <a href="https://kernelnote.com/deep-dive-intel-siov.html">
+                聊聊intel平台io 虚拟化技术之 siov
+            </a>
+        </h1>
+    </header>
+</div>
+
+<div class="row-fluid">
+        <div class="span8 offset2 article-content">
+            
+            <h4>序言</h4>
+<p>首先需要说明的是这并不是一项很新的技术，因为早在2017年intel就对外expose了相关的spec。但是直到今天仍然还是停留在spec层面，不过好在随着intel SPR平台的推出intel也终于下定决心要enable这个feature了(其主要原因是SPR平台的许多feature比如DSA都是需要通过SIOV来enable)。那么今天我们就来解析一下这项技术，照例我们还是先来看一下其整体的架构说明。</p>
+<h4>硬件架构</h4>
+<p>在解析siov架构之前，我们先来看一下这些年来 I/O Virtualization的演进路线</p>
+<p><img alt="io_virtualization" src="images/io_virtualization.png">
+<center>图1 the evolution of I/O Virtualization</center>
+其中大家对SR-IOV比较熟悉它也是目前在高性能的I/O虚拟化场景使用最多的技术，为了让大家对SIOV这个技术有个更加全面的认知，我们把SR-IOV和SIOV做一下对比。</p>
+<p><img alt="sriov&amp;siov" src="images/sriov&amp;siov.png">
+<center>图2 SR-IOV VS SIOV</center>
+如图2所示，SR-IOV技术主要是以设备为粒度进行切分即一个PF分割成多个VF，每个VF都是一个独立的完善的pcie设备。一个PF能支持的VF的最大数量在硬件设备出厂的时候就已经确定了，而SIOV对上层应用(比如虚拟机)呈现出来的设备是由软件通过对硬件层的更小粒度的资源(Queue)动态组合形成的，所以相对SR-IOV，SIOV有更强的可扩展性。另外，在灵活性方面siov既能让系统上的应用通过system call的形式直接访问其底层的queue资源，也能通过virtual device interfaces的形式直通给vm。还有就是在siov的场景下，两个VDEV之间的Queue资源是可以share的；另外一个就是良好的兼容性，vmm可以使用virtual devevice composition 在不同代的硬件设备上呈现相同的VDEV功能，这样即使在部署了不同代的siov设备的host之间虚拟机也能正常迁移。</p>
+<p><img alt="benefits" src="images/benefits.png">
+<center> 图3 the benefits of SIOV </center></p>
+<p>接下来我们回归到SIOV架构上来，按照惯例我们还是先来看一下硬件底层的架构。为了让大家更好的理解相关架构，这里还是以SR-IOV做为对比</p>
+<p><img alt="hw_siov" src="images/hw_siov.png">
+<center> 图 4 the hardware of SIOV </center></p>
+<p>具体如图4所示，intel scalable IOV 主要是以queue为粒度来给上层应用提供服务，为此siov在硬件侧引入了一个ADI(Assignable Device Interfaces)的概念。在功能上它与VF相似，但是不同点在于所有的ADI共享同一个PF的BDF号、pci config_space和BAR空间。但是这个也引入了额外的问题：一是所有的ADI share同一个BDF号那在iommu这一侧如何区分来自不同的ADI的设备的DMA请求呢？另外一个就是一个pcie设备即使在msix的情况下他支持的最大中断数目也只能到2048，那如果一个PF上支持的ADI数量所使用的总的中断数量超过了这个limit将如何处理呢？</p>
+<p>先说问题一，siov为了解决这个问题给每个ADI的tlp request额外加上了一个全局唯一的Process Address Space Identifier简称PASID的标识，但是如果多个ADI 直通给同一个vm则这些ADI的PASID是相同的。在iommu侧这种支持有PASID的io页表翻译模式称为scalable Mode Address Translation，没有PASID的称为legacy Mode。如果iommu 的Extend Capability Register的SMTS( Scalable Mode Translation)位置1则表明支持scalable mode，在scalabe mode模式下Root Table Address Register(RTADDR_REG)的TTM为01b。</p>
+<p><img alt="siov_trans" src="images/siov_trans.png">
+<center> 图5</center></p>
+<p>如上图所示scalable Mode 的root table会关联两个contex table，一个Upper context table 对应着 device 号在16~31之间的PCI function，另外一个Lower Contex Table 对应device 号在0~15这个范围内的PCI function。每个context entry 都包含着一个指向PASID directory的指针，然后通过PASID 高14位(bits 19:6 )在scalable Mode PASID  directory当中索引到scalabe Mode PASI Table，再通过PASID的低6位(5:0)索引到table当中具体的entry项。通过scalable Mode PASID table entry的PGTT(8:6)标志来确定Translation type。</p>
+<p><img alt="pgtt" src="images/pgtt.png">
+<center> 图6</center></p>
+<p>再说问题二，为了解决这个中断limit的问题SIOV引入了新的中断存储机制叫IMS(interrupt message storage)，理论上IMS在支持的中断数量是没有上限的，从实现原理上来讲其仍然是message 格式的中断触发机制，每个message有一个DWORD 大小的payload和64-bit的address。这些message存储在 IMS的table里面，这个table可以有全部缓存在硬件上，也可以全部放在host memory里面。ADI是不能直接操作(比如修改)IMS的，它只能通过PF的 'Interrupt Message Generation Logic' 来触发中断。</p>
+<p>上面说了两个问题的解决，下面我们说一下ADI的mmio，它是位于PF bar地址空间的一段连续的按页大小对齐的地址范围。每个ADI设备的mmio是相互独立的，ADI设备的mmio register又分为两类，一类是访问频率比较高的比如硬件层的doorbell，一类是不经常访问的或者慢路径访问的比如用来进行一些设备配置和管理等。另外，为了支持大量ADI设备的mmio，PF必须要实现prefetchable 64-bit BAR。原因是说PCIe non-prefetchable BARS的memory  space  能支持的最大空间只有1GB，显然不能支持太多的ADI设备；而prefetchable 属性enable 的BARS 的memory space 可以超过4G。</p>
+<p>说完mmio我们再聊一下如何确定PF是否支持SIOV。PF是通过PCI Express Designated Vendor
+Specific Extended Capability (DVSEC)这个cap来向PF driver report 是否来支持SIOV，具体DVSEC 格式如下</p>
+<p><img alt="dvsec" src="images/dvsec.png">
+<center> 图7</center></p>
+<p>在pci驱动侧，相关检测代码如下：</p>
+<div class="highlight"><pre><span></span><code><span class="o">/**</span>
+<span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">pci_find_dvsec</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">position</span><span class="w"> </span><span class="n">of</span><span class="w"> </span><span class="n">DVSEC</span><span class="w"> </span><span class="n">with</span><span class="w"> </span><span class="n">provided</span><span class="w"> </span><span class="n">vendor</span><span class="w"> </span><span class="nb">and</span><span class="w"> </span><span class="n">dvsec</span><span class="w"> </span><span class="n">id</span>
+<span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="p">@</span><span class="n">dev</span><span class="p">:</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">PCI</span><span class="w"> </span><span class="n">device</span>
+<span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="p">@</span><span class="n">vendor</span><span class="p">:</span><span class="w"> </span><span class="n">Vendor</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">DVSEC</span>
+<span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="p">@</span><span class="n">id</span><span class="p">:</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">DVSEC</span><span class="w"> </span><span class="n">cap</span><span class="w"> </span><span class="n">id</span>
+<span class="w"> </span><span class="o">*</span>
+<span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">Return</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">offset</span><span class="w"> </span><span class="n">of</span><span class="w"> </span><span class="n">DVSEC</span><span class="w"> </span><span class="n">on</span><span class="w"> </span><span class="n">success</span><span class="w"> </span><span class="nb">or</span><span class="w"> </span><span class="o">-</span><span class="n">ENOTSUPP</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">not</span><span class="w"> </span><span class="n">found</span>
+<span class="w"> </span><span class="o">*/</span>
+<span class="nb">int</span><span class="w"> </span><span class="n">pci_find_dvsec</span><span class="p">(</span><span class="nb">struct</span><span class="w"> </span><span class="n">pci_dev</span><span class="w"> </span><span class="o">*</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">u16</span><span class="w"> </span><span class="n">vendor</span><span class="p">,</span><span class="w"> </span><span class="n">u16</span><span class="w"> </span><span class="n">id</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">u16</span><span class="w"> </span><span class="n">dev_vendor</span><span class="p">,</span><span class="w"> </span><span class="n">dev_id</span><span class="p">;</span>
+<span class="w">    </span><span class="nb">int</span><span class="w"> </span><span class="n">pos</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">pos</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">pci_find_ext_capability</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">PCI_EXT_CAP_ID_DVSEC</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span>!<span class="n">pos</span><span class="p">)</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="o">-</span><span class="n">ENOTSUPP</span><span class="p">;</span>
+
+<span class="w">    </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">pos</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">pci_read_config_word</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">pos</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">PCI_DVSEC_HEADER1</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dev_vendor</span><span class="p">);</span>
+<span class="w">        </span><span class="n">pci_read_config_word</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">pos</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">PCI_DVSEC_HEADER2</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dev_id</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">dev_vendor</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">vendor</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">dev_id</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">id</span><span class="p">)</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">pos</span><span class="p">;</span>
+
+<span class="w">        </span><span class="n">pos</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">pci_find_next_ext_capability</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">pos</span><span class="p">,</span><span class="w"> </span><span class="n">PCI_EXT_CAP_ID_DVSEC</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">-</span><span class="n">ENOTSUPP</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="n">bool</span><span class="w"> </span><span class="n">pci_siov_supported</span><span class="p">(</span><span class="nb">struct</span><span class="w"> </span><span class="n">pci_dev</span><span class="w"> </span><span class="o">*</span><span class="n">dev</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">pci_find_dvsec</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">PCI_VENDOR_ID_INTEL</span><span class="p">,</span><span class="w"> </span><span class="n">PCI_DVSEC_ID_INTEL_SIOV</span><span class="p">)</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span>?<span class="w"> </span><span class="n">false</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">true</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h5>软件架构</h5>
+<p>上面说完了整个硬件的架构，下面我们来看一下在软件层面的实现</p>
+<p><img alt="intel_siov_soft" src="images/intel_siov_soft.png">
+<center> 图8</center>
+如图8所示，整个软件架构上除了guest driver，host driver之外还引入了新的组件VDCM和VDEV。上面的图可能跟大家的认知还是有些距离，为了让大家有个更加清晰的认知我们可以看下面这张图</p>
+<p><img alt="siov_soft_architecture" src="images/siov_soft_architecture.png">
+<center>图9</center></p>
+<p>接着我们来分析新引入的两个组件(mdev这个框架我们在这里就不详细介绍了)</p>
+<ul>
+<li>
+<p>VDCM
+VDCM 全称是Virtual Device Composition Module，它主要负责将一个或者多个ADI组合成一个VDEV然后呈现给vm使用，同时它也负责一些trap到后端的mmio的解释执行，另外就是ADI设备的一些操作比如Reset和配置等。</p>
+</li>
+<li>
+<p>VDEV
+其实上面也已经讲了它是由一个或者多个ADI设备组成，在guest里面看到的就是一个标准的PCIe 设备。每个VDEV都有虚拟的requester id, config space, memory BAR，MSIX-table等，它们都是由VDCM来进行模拟的。</p>
+</li>
+</ul>
+<p>从上面的分析来看，VDCM在整个软件架构上扮演着非常重要的角色，下面我们结合一张图来看一下相关实现</p>
+<p><img alt="vdcm" src="images/vdcm.png"></p>
+<p><center> 图10</center>
+结合图10我们来分析一些细节的东西，比如vdev 的mmio，中断等</p>
+<ul>
+<li>
+<p>VDEV mmio
+从图中可以看到VDEV mmio实现分为三类：一类是直接map到 ADI的 mmio，类似SR-IOV场景下将硬件的MMIO通过EPT的方式直接让guest访问，避免大量的退出；一类是通过VDCM 模拟的mmio，guest里面在写这个mmio的时候会trap到 VDCM，然后需要VDCM进行解释和模拟相关的action，通常这类mmio是要是一些控制面的数据交互；一类是map到host侧的memory上，这类mmio通常存储的是一些参数或者数据，这样就避免了在读取或者写入的时候VDCM侧的解释和指令模拟。</p>
+</li>
+<li>
+<p>VDEV Interrupts
+VDEV 会通过VDCM 虚拟出MSI或者MSIX的能力呈献给guest，当guest driver 去programs msi 或者msix的时候会被VDCM截获到然后做相关的中断虚拟化操作。这里需要说明的是慢路径上的中断是可以通过VMM提供的中断注入接口来触发，而快路径或者说是数据面上的中断是通过iommu的post interrupt来注入的。</p>
+</li>
+</ul>
+<h4>总结</h4>
+<p>文章主要介绍了siov的相关架构，希望大家对SIOV能先有个整体的认知。相关的代码层面的东西这里就不介绍了，后面如果有时间可以再续一篇。<strong>但是不管SR-IOV还是SIOV其好像都忽略一个比较关键的问题，那就是随着硬件设备的增多导致iommu 上iotlb miss增加，从而直接影响数据面的性能</strong>。关于这个问题其实完全是可以通过软硬一体化的方案来解决的，有机会可以再分享一下。</p>
+<h5>参考资料</h5>
+<ul>
+<li>intel scalable io virtualization spec </li>
+<li>Bring a Scalable IOV Capable Device into Linux World by Xin Zeng &amp; Yi Liu</li>
+</ul>
+
+
+             
+ 
+            
+            
+            
+
+
+
+
+
+
+            <hr/>
+        </div>
+        <section id="article-sidebar" class="span2">
+            <h4>Published</h4>
+            <time itemprop="dateCreated" datetime="2022-03-26T00:00:00+08:00"> 3 26, 2022</time>
+            <h4>Category</h4>
+            <a class="category-link" href="https://kernelnote.com/categories.html#articles-ref">articles</a>
+            <h4>Tags</h4>
+            <ul class="list-of-tags tags-in-article">
+                <li><a href="https://kernelnote.com/tags.html#siov-ref">SIOV
+                    <span>1</span>
+</a></li>
+            </ul>
+            
+
+
+
+
+
+            
+
+
+
+
+
+        </section>
+</div>
+</article>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
+<footer>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>            <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+
+    <script>
+    (function () {
+        if (window.location.hash.match(/^#comment-\d+$/)) {
+            $('#comment_thread').collapse('show');
+        }
+    })();
+    window.onhashchange=function(){
+        if (window.location.hash.match(/^#comment-\d+$/))
+            window.location.reload(true);
+    }
+    $('#comment_thread').on('shown', function () {
+        var link = document.getElementById('comment-accordion-toggle');
+        var old_innerHTML = link.innerHTML;
+        $(link).fadeOut(200, function() {
+            $(this).text('Click here to hide comments').fadeIn(200);
+        });
+        $('#comment_thread').on('hidden', function () {
+            $(link).fadeOut(200, function() {
+                $(this).text(old_innerHTML).fadeIn(200);
+            });
+        })
+    })
+</script>
+
+    </body>
+    <!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>
