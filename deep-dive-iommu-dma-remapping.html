@@ -1,81 +1,71 @@
 <!DOCTYPE html>
+
 <html lang="zh_cn">
-    <head>
-        <meta charset="utf-8">
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta name="author" content="duma" />
-
-        <meta property="og:type" content="article" />
-        <meta name="twitter:card" content="summary">
-
-<meta name="keywords" content="iommu, articles, " />
-
-<meta property="og:title" content="深入了解iommu系列二：iommu 工作原理解析之dma remapping "/>
-<meta property="og:url" content="https://kernelnote.com/deep-dive-iommu-dma-remapping.html" />
-<meta property="og:description" content="序言 上一篇文章主要写了一下iommu硬件架构以及其在驱动层的初始化流程，那这一篇我们会花点时间来详细介绍一下iommu分别在虚拟化和非虚拟化场景下 dma remapping的工作原理 非虚拟化场景 在非虚拟化场景下如 …" />
-<meta property="og:site_name" content="kernelnote" />
-<meta property="og:article:author" content="duma" />
-<meta property="og:article:published_time" content="2022-02-06T00:00:00+08:00" />
-<meta name="twitter:title" content="深入了解iommu系列二：iommu 工作原理解析之dma remapping ">
-<meta name="twitter:description" content="序言 上一篇文章主要写了一下iommu硬件架构以及其在驱动层的初始化流程，那这一篇我们会花点时间来详细介绍一下iommu分别在虚拟化和非虚拟化场景下 dma remapping的工作原理 非虚拟化场景 在非虚拟化场景下如 …">
-
-        <title>深入了解iommu系列二：iommu 工作原理解析之dma remapping  · kernelnote
+<head>
+<meta charset="utf-8"/>
+<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="duma" name="author">
+<meta content="article" property="og:type">
+<meta content="summary" name="twitter:card"/>
+<meta content="iommu, articles, " name="keywords">
+<meta content="深入了解iommu系列二：iommu 工作原理解析之dma remapping " property="og:title">
+<meta content="https://kernelnote.com/deep-dive-iommu-dma-remapping.html" property="og:url"/>
+<meta content="序言 上一篇文章主要写了一下iommu硬件架构以及其在驱动层的初始化流程，那这一篇我们会花点时间来详细介绍一下iommu分别在虚拟化和非虚拟化场景下 dma remapping的工作原理 非虚拟化场景 在非虚拟化场景下如 …" property="og:description"/>
+<meta content="kernelnote" property="og:site_name"/>
+<meta content="duma" property="og:article:author"/>
+<meta content="2022-02-06T00:00:00+08:00" property="og:article:published_time"/>
+<meta content="深入了解iommu系列二：iommu 工作原理解析之dma remapping " name="twitter:title"/>
+<meta content="序言 上一篇文章主要写了一下iommu硬件架构以及其在驱动层的初始化流程，那这一篇我们会花点时间来详细介绍一下iommu分别在虚拟化和非虚拟化场景下 dma remapping的工作原理 非虚拟化场景 在非虚拟化场景下如 …" name="twitter:description"/>
+<title>深入了解iommu系列二：iommu 工作原理解析之dma remapping  · kernelnote
 </title>
-        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
-        <link rel="stylesheet" type="text/css" href="https://kernelnote.com/theme/css/elegant.prod.css" media="screen">
-        <link rel="stylesheet" type="text/css" href="https://kernelnote.com/theme/css/custom.css" media="screen">
-
-
-
-    </head>
-    <body>
-        <div id="content">
-            <div class="navbar navbar-static-top">
-                <div class="navbar-inner">
-                    <div class="container-fluid">
-                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
-                            <span class="icon-bar"></span>
-                            <span class="icon-bar"></span>
-                            <span class="icon-bar"></span>
-                        </a>
-                        <a class="brand" href="https://kernelnote.com/"><span class=site-name>kernelnote</span></a>
-                        <div class="nav-collapse collapse">
-                            <ul class="nav pull-right top-menu">
-                                <li >
-                                    <a href=
-                                       https://kernelnote.com
-                                    >Home</a>
-                                </li>
-                                <li ><a href="https://kernelnote.com/pages/about.html">about</a></li>
-                                <li ><a href="https://kernelnote.com/categories.html">Categories</a></li>
-                                <li ><a href="https://kernelnote.com/tags.html">Tags</a></li>
-                                <li ><a href="https://kernelnote.com/archives.html">Archives</a></li>
-                                <li><form class="navbar-search" action="https://kernelnote.com/search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="container-fluid">
-                <div class="row-fluid">
-                    <div class="span1"></div>
-                    <div class="span10">
-<article itemscope>
+<link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet"/>
+<link href="https://kernelnote.com/theme/css/elegant.prod.css" media="screen" rel="stylesheet" type="text/css"/>
+<link href="https://kernelnote.com/theme/css/custom.css" media="screen" rel="stylesheet" type="text/css"/>
+</meta></meta></meta></meta><link href="https://kernelnote.com/deep-dive-iommu-dma-remapping.html" rel="canonical"/><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "kernelnote", "item": "https://kernelnote.com"}, {"@type": "ListItem", "position": 2, "name": "Deep dive iommu dma remapping", "item": "https://kernelnote.com/deep-dive-iommu-dma-remapping.html"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "author": {"@type": "Person", "name": "duma"}, "publisher": {"@type": "Organization", "name": "kernelnote"}, "headline": "深入了解iommu系列二：iommu 工作原理解析之dma remapping", "about": "articles", "datePublished": "2022-02-06 00:00"}</script></head>
+<body>
+<div id="content">
+<div class="navbar navbar-static-top">
+<div class="navbar-inner">
+<div class="container-fluid">
+<a class="btn btn-navbar" data-target=".nav-collapse" data-toggle="collapse">
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+</a>
+<a class="brand" href="https://kernelnote.com/"><span class="site-name">kernelnote</span></a>
+<div class="nav-collapse collapse">
+<ul class="nav pull-right top-menu">
+<li>
+<a href="https://kernelnote.com">Home</a>
+</li>
+<li><a href="https://kernelnote.com/pages/about.html">about</a></li>
+<li><a href="https://kernelnote.com/categories.html">Categories</a></li>
+<li><a href="https://kernelnote.com/tags.html">Tags</a></li>
+<li><a href="https://kernelnote.com/archives.html">Archives</a></li>
+<li><form action="https://kernelnote.com/search.html" class="navbar-search" onsubmit="return validateForm(this.elements['q'].value);"> <input class="search-query" id="tipue_search_input" name="q" placeholder="Search" type="text"/></form></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="container-fluid">
 <div class="row-fluid">
-    <header class="page-header span10 offset2">
-        <h1>
-            <a href="https://kernelnote.com/deep-dive-iommu-dma-remapping.html">
+<div class="span1"></div>
+<div class="span10">
+<article itemscope="">
+<div class="row-fluid">
+<header class="page-header span10 offset2">
+<h1>
+<a href="https://kernelnote.com/deep-dive-iommu-dma-remapping.html">
                 深入了解iommu系列二：iommu 工作原理解析之dma remapping
             </a>
-        </h1>
-    </header>
+</h1>
+</header>
 </div>
-
 <div class="row-fluid">
-        <div class="span8 offset2 article-content">
-            
-            <h3>序言</h3>
+<div class="span8 offset2 article-content">
+<h3>序言</h3>
 <p>上一篇文章主要写了一下iommu硬件架构以及其在驱动层的初始化流程，那这一篇我们会花点时间来详细介绍一下iommu分别在虚拟化和非虚拟化场景下 dma remapping的工作原理</p>
 <h3>非虚拟化场景</h3>
 <p>在非虚拟化场景下如果不是显示的在cmdline里面把iommu设置为disabled则一般都会默认enable iommu硬件，另外还有一种常用的方式就是iommu=pt这种方式跟default设置的唯一区别是会不会提前建立static map。为了让大家有个更清晰的认知，我们在内核里面找段dma操作相关的代码并以此为开端对iommu的dma工作机制进行剖析。</p>
@@ -87,7 +77,7 @@
 
 <span class="w">        </span><span class="nx">dma_addr</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">pci_map_single</span><span class="p">(</span><span class="nx">nic</span><span class="o">-&gt;</span><span class="nx">pdev</span><span class="p">,</span>
 <span class="w">                                  </span><span class="nx">skb</span><span class="o">-&gt;</span><span class="nx">data</span><span class="p">,</span><span class="w"> </span><span class="nx">skb</span><span class="o">-&gt;</span><span class="nx">len</span><span class="p">,</span><span class="w"> </span><span class="nx">PCI_DMA_TODEVICE</span><span class="p">);</span>
-<span class="w">        </span><span class="cm">/* If we can&#39;t map the skb, have the upper layer try later */</span>
+<span class="w">        </span><span class="cm">/* If we can't map the skb, have the upper layer try later */</span>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">pci_dma_mapping_error</span><span class="p">(</span><span class="nx">nic</span><span class="o">-&gt;</span><span class="nx">pdev</span><span class="p">,</span><span class="w"> </span><span class="nx">dma_addr</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="nx">dev_kfree_skb_any</span><span class="p">(</span><span class="nx">skb</span><span class="p">);</span>
 <span class="w">                </span><span class="nx">skb</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">NULL</span><span class="p">;</span>
@@ -97,7 +87,6 @@
 <span class="w">        </span><span class="o">.........</span>
 <span class="p">}</span>
 </code></pre></div>
-
 <p>上面的代码片断是摘至于内核e100网卡驱动，核心逻辑就是先把skb的地址做一下dma map，然后让硬件可以直接dma这段数据，其中使用的<code>pci_map_single</code>这个函数最终会调到</p>
 <div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="n">inline</span><span class="w"> </span><span class="n">dma_addr_t</span><span class="w"> </span><span class="n">dma_map_single_attrs</span><span class="p">(</span><span class="n">struct</span><span class="w"> </span><span class="n">device</span><span class="w"> </span><span class="o">*</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="nb nb-Type">void</span><span class="w"> </span><span class="o">*</span><span class="n">ptr</span><span class="p">,</span>
 <span class="w">                                              </span><span class="n">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">,</span>
@@ -118,7 +107,6 @@
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">addr</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-
 <p>如果有iommu硬件的情况下(以intel iommu为例)他最终为走到<code>intel_map_page</code>，下面我们来看一下这个函数的核心逻辑</p>
 <div class="highlight"><pre><span></span><code><span class="nx">static</span><span class="w"> </span><span class="nx">dma_addr_t</span><span class="w"> </span><span class="nx">__intel_map_single</span><span class="p">(</span><span class="nx">struct</span><span class="w"> </span><span class="nx">device</span><span class="w"> </span><span class="o">*</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">phys_addr_t</span><span class="w"> </span><span class="nx">paddr</span><span class="p">,</span>
 <span class="w">                                     </span><span class="nx">size_t</span><span class="w"> </span><span class="nx">size</span><span class="p">,</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="nx">dir</span><span class="p">,</span><span class="w"> </span><span class="kt">u64</span><span class="w"> </span><span class="nx">dma_mask</span><span class="p">)</span>
@@ -167,7 +155,7 @@
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">ret</span><span class="p">)</span>
 <span class="w">                </span><span class="nx">goto</span><span class="w"> </span><span class="nx">error</span><span class="p">;</span>
 
-<span class="w">        </span><span class="cm">/* it&#39;s a non-present to present mapping. Only flush if caching mode */</span>
+<span class="w">        </span><span class="cm">/* it's a non-present to present mapping. Only flush if caching mode */</span>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">cap_caching_mode</span><span class="p">(</span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">cap</span><span class="p">))</span>
 <span class="w">                </span><span class="nx">iommu_flush_iotlb_psi</span><span class="p">(</span><span class="nx">iommu</span><span class="p">,</span><span class="w"> </span><span class="nx">domain</span><span class="p">,</span>
 <span class="w">                                      </span><span class="nx">mm_to_dma_pfn</span><span class="p">(</span><span class="nx">iova_pfn</span><span class="p">),</span>
@@ -182,12 +170,11 @@
 <span class="nx">error</span><span class="p">:</span>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">iova_pfn</span><span class="p">)</span>
 <span class="w">                </span><span class="nx">free_iova_fast</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">domain</span><span class="o">-&gt;</span><span class="nx">iovad</span><span class="p">,</span><span class="w"> </span><span class="nx">iova_pfn</span><span class="p">,</span><span class="w"> </span><span class="nx">dma_to_mm_pfn</span><span class="p">(</span><span class="nx">size</span><span class="p">));</span>
-<span class="w">        </span><span class="nx">pr_err</span><span class="p">(</span><span class="s">&quot;Device %s request: %zx@%llx dir %d --- failed\n&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">pr_err</span><span class="p">(</span><span class="s">"Device %s request: %zx@%llx dir %d --- failed\n"</span><span class="p">,</span>
 <span class="w">                </span><span class="nx">dev_name</span><span class="p">(</span><span class="nx">dev</span><span class="p">),</span><span class="w"> </span><span class="nx">size</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="nx">unsigned</span><span class="w"> </span><span class="nx">long</span><span class="w"> </span><span class="nx">long</span><span class="p">)</span><span class="nx">paddr</span><span class="p">,</span><span class="w"> </span><span class="nx">dir</span><span class="p">);</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-
 <p>我们来好好走读一下这个函数，首先会判断是否为<code>iommu_no_mapping</code>，如果是则直接返回paddr也即物理地址。再来看看<code>iommu_no_mapping</code>这个函数的具体逻辑。</p>
 <div class="highlight"><pre><span></span><code>static int iommu_no_mapping(struct device <span class="gs">*dev)</span>
 <span class="gs">{</span>
@@ -209,7 +196,7 @@
                          <span class="k">*</span> to non-identity mapping.
                          <span class="gs">*/</span>
 <span class="gs">                        dmar_remove_one_dev_info(si_domain, dev);</span>
-<span class="gs">                        pr_info(&quot;32bit %s uses non-identity mapping\n&quot;,</span>
+<span class="gs">                        pr_info("32bit %s uses non-identity mapping\n",</span>
 <span class="gs">                                dev_name(dev));</span>
 <span class="gs">                        return 0;</span>
 <span class="gs">                }</span>
@@ -222,7 +209,7 @@
                         int ret;
                         ret = domain_add_dev_info(si_domain, dev);
                         if (!ret) {
-                                pr_info(&quot;64bit %s uses identity mapping\n&quot;,
+                                pr_info("64bit %s uses identity mapping\n",
                                         dev_name(dev));
                                 return 1;
                         }
@@ -232,7 +219,6 @@
         return 0;
 }
 </code></pre></div>
-
 <p>从实现来看，首先会判断<code>iommu_identity_mapping</code>是否为空(如果大家读过上一篇文章应该知道当iommu=pt的时候这个变量是不会为空的)如果为空则返回false，这里我先看一下不为空的逻辑。接着函数走到<code>identity_mapping</code>，这个函数的实现具体如下：</p>
 <div class="highlight"><pre><span></span><code>static int identity_mapping(struct device *dev)
 {
@@ -248,7 +234,6 @@
         return 0;
 }
 </code></pre></div>
-
 <p>可以看到函数里面首先判断<code>iommu_identity_mapping</code>是否为空，那么在iommut=pt的情况下这个是不为空的，然后判断设备的domain是否为si_domain，当然这个答案也是肯定的。因此这个函数返回值为true，接着函数走到<code>iommu_should_identity_map(dev, 0)</code>，那么这个函数主要的判断如下：</p>
 <ol>
 <li>如果这个设备不是pci设备且这个设备有RMRR，则这返回False.</li>
@@ -275,7 +260,7 @@
                 return -EFAULT;
         }
 
-        pr_debug(&quot;Identity mapping domain allocated\n&quot;);
+        pr_debug("Identity mapping domain allocated\n");
         //如果hw为true,则直接返回
         if (hw)
                 return 0;
@@ -295,26 +280,24 @@
         return 0;
 }
 </code></pre></div>
-
 <p>首先，hw这个参数输入为hw_pass_through，它指的是iommu硬件上是否支持paas through翻译模式即iova就是真实的物理地址不需要再走一遍从iova转换到hpa的流程。那么从上面的函数实现也能看到如果hw为true则si_domain不会再去做相关内存mapping(关于hw为false的情况后面我们再分析），也就是说如果iommu硬件支持hw且iommu配置了pt则这种场景下硬件的DMA到达iommu之后不需要走页表翻译直接跟memory controller进行交互就可以了。<strong>但是大家再仔细想一下iommu硬件是如何知道哪些设备的dma要走页表进行转换，哪些设备的dma不需要进行地址转换呢？</strong> 为了更好的解释这个问题，我们先来回忆一下dma的页表是如何确定的</p>
-<p><img alt="iotlb" src="images/iotlb.png">
+<p><img alt="iotlb" src="images/iotlb.png"/>
 <center>图1</center>
 从上面这张图我们可以看到一个设备的iova页表首先是通过bus号在root table里面找到相应的root_entry，然后再通过devfn在context table里面找到对应的context_entry，然后才能找到真正的页表。从vt-d的spec来看，contex_entry的format里面有一个标志位(TT)来表明这个设备的DMA是否是paasthroug，具体如下:</p>
-<p><img alt="contex_entry" src="images/contex_entry.png">
+<p><img alt="contex_entry" src="images/contex_entry.png"/>
 <center>图2</center></p>
 <p>我们再来看一下对图2中相关字段的详细描述：</p>
-<p><img alt="tt" src="images/tt.png">
+<p><img alt="tt" src="images/tt.png"/>
 <center>图3</center>
 从图3中可以看到TT这个字段为10b时表示这个dma是不需要进行页表转换的，所以<strong>iommu就是通过这个字段来进行区分是否要通过页表进行转换的</strong>。但是还有一个问题是这个TT为paasthrough的translation type是什么时候设置的？回答这个问题，我们还是需要回归到内核相关代码当中。目前我们条件是hw为true，且iommu=pt的情况，我们还是回到<code>intel_iommu_init</code>的这个函数当中</p>
 <div class="highlight"><pre><span></span><code>        if (iommu_identity_mapping) {
                 ret = iommu_prepare_static_identity_mapping(hw_pass_through);
                 if (ret) {
-                        pr_crit(&quot;Failed to setup IOMMU pass-through\n&quot;);
+                        pr_crit("Failed to setup IOMMU pass-through\n");
                         goto free_iommu;
                 }
         }
 </code></pre></div>
-
 <p>上面这个函数片断截取自<code>init_dmars</code>这个函数，其核心函数为<code>iommu_prepare_static_identity_mapping</code>，它最终会调到<code>domain_add_dev_info</code> 这个函数并最终走到<code>domain_context_mapping_one</code></p>
 <div class="highlight"><pre><span></span><code><span class="nx">static</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="nx">domain_context_mapping_one</span><span class="p">(</span><span class="nx">struct</span><span class="w"> </span><span class="nx">dmar_domain</span><span class="w"> </span><span class="o">*</span><span class="nx">domain</span><span class="p">,</span>
 <span class="w">                                      </span><span class="nx">struct</span><span class="w"> </span><span class="nx">intel_iommu</span><span class="w"> </span><span class="o">*</span><span class="nx">iommu</span><span class="p">,</span>
@@ -372,7 +355,6 @@
 
 <span class="p">}</span>
 </code></pre></div>
-
 <p>看完之后大家应该有个比较清晰的理解，上面主要理了一下在iommu=pt，hw为true的情况；如果hw为false的情况又会怎么样了？具体的逻辑还是要从<code>init_dmars</code>这个函数开始看起，通过分析可以看到因为hw=false也就是说iommu硬件不支持paas through 的translation type，所以必须要是创建页表的，但是因为是静态映射即iova就等于hpa，所以在这种情况下也是可以直接返回paddr的，但是效率肯定是没法跟hw=true相比的。</p>
 <p>聊完iommu=pt的各种情况之后，我们再看一下iommu为默认设置的情况下设备是如何进行dma操作的。 还是先要从<code>intel_iommu_init</code>这个函数里面的<code>init_dmars</code>看起，从这相关的逻辑来看区别在于不会提前创建si_domain(即提前做好iova的映射)，那它是在什么时候创建的呢？答案是在dma_map的时候而且dma map相关的api返回的iova，如果大家感兴趣可以去仔细读一下<code>__intel_map_single</code>这个函数，部分核心逻辑如下：</p>
 <div class="highlight"><pre><span></span><code><span class="w">        </span><span class="c1">//如果dev没有创建domain则重新创建，同时将其加入到contex table里面</span>
@@ -387,7 +369,6 @@
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(!</span><span class="nx">iova_pfn</span><span class="p">)</span>
 <span class="w">                </span><span class="nx">goto</span><span class="w"> </span><span class="nx">error</span><span class="p">;</span>
 </code></pre></div>
-
 <h3>虚拟化场景</h3>
 <p>iommu在虚拟化场景扮演着非常重要的作用，尤其是在设备直通的场景。大家都知道在虚拟机里面是没有iommu的，guest 里面的所有的dma_ops走的都是noiommu(当然之前也有人在推viommu的方案)，所以当你在guest里面使用dma_map这种类似的api的时候，其返回的都是gpa。这样问题就来了，你想想如果虚拟机使用的是virtio-net or virtio-blk这种完全模拟的设备还好，因为其本质都还是共享内存还是在mmu层做转换。但是在直通设备的场景下，它就是跟真的外设打交道，而外设是无法直接dma gpa的，它必然要做一层转换。接下来我们就来分析一下虚拟化场景下iommu是如何工作的。</p>
 <p>首先，如果你要在虚拟机场景下做设备直通那我们经常会在kernel cmdline里面做iommu=pt, intel_iommu=on(当然也可以是amd, arm)。然后把vf或者pf从原来的驱动unbind掉，然后bind到<code>vfio_pci</code>，接着在启动虚拟机的时候我们需要对设备在vfio层面进行相关的初始化，然后并对guest所有的内存做vfio_dma_map。iommu=pt这个由于前面已经分析过了，这里我就不再细讲，我们看一下把vf或者pf从原来的驱动unbind的过程中跟iommu相关的哪些：</p>
@@ -418,7 +399,6 @@
 <span class="w">        </span><span class="p">.</span><span class="nx">notifier_call</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">device_notifier</span><span class="p">,</span>
 <span class="p">};</span>
 </code></pre></div>
-
 <p>这个是比较核心的地方，从上面的逻辑可以看出设备从其原来的driver unbind的时候会如果这个设备已经有了相关的dmar_domain比如之前说的在pt的场景下会提前创建好静态mapping si_domain，那么这时候会把设备从si_domain移除。</p>
 <p>然后再看把设备bind到vfio-pci driver的时候发生了什么事情呢？最终其会调到<code>vfio_pci_probe</code>这个函数里面，其核心的逻辑具体如下：</p>
 <ul>
@@ -430,7 +410,7 @@
 </ul>
 <p>这个函数首先从该设备所属的iommu_group找到相应的<code>vfio_group</code>，如果找不到则会为这个<code>iommu_group</code>创建<code>vfio_group</code>；然后再把这个dev跟<code>vfio_device</code>关联起来，同时为这个<code>vfio_dev</code>绑定<code>vfio_device_ops</code></p>
 <div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">struct</span><span class="w"> </span><span class="n">vfio_device_ops</span><span class="w"> </span><span class="n">vfio_pci_ops</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="o">.</span><span class="n">name</span><span class="w">           </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;vfio-pci&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="o">.</span><span class="n">name</span><span class="w">           </span><span class="o">=</span><span class="w"> </span><span class="s2">"vfio-pci"</span><span class="p">,</span>
 <span class="w">        </span><span class="o">.</span><span class="n">open</span><span class="w">           </span><span class="o">=</span><span class="w"> </span><span class="n">vfio_pci_open</span><span class="p">,</span>
 <span class="w">        </span><span class="o">.</span><span class="n">release</span><span class="w">        </span><span class="o">=</span><span class="w"> </span><span class="n">vfio_pci_release</span><span class="p">,</span>
 <span class="w">        </span><span class="o">.</span><span class="n">ioctl</span><span class="w">          </span><span class="o">=</span><span class="w"> </span><span class="n">vfio_pci_ioctl</span><span class="p">,</span>
@@ -440,7 +420,6 @@
 <span class="w">        </span><span class="o">.</span><span class="n">request</span><span class="w">        </span><span class="o">=</span><span class="w"> </span><span class="n">vfio_pci_request</span><span class="p">,</span>
 <span class="p">};</span>
 </code></pre></div>
-
 <p>上面我们主要是聊了一下设备直通之前的一些准备工作，下面我们看一下qemu侧直通设备vfio相关的操作，为了让大家更的好理解我们举个例子，假设我们要把pci device 0000:06:0d.0 直通给vm，则看一下相关的信息：</p>
 <blockquote>
 <p>readlink /sys/bus/pci/devices/0000:06:0d.0/iommu_group</p>
@@ -465,22 +444,20 @@
 <span class="w">        </span><span class="o">.</span><span class="n">release</span><span class="w">        </span><span class="o">=</span><span class="w"> </span><span class="n">vfio_group_fops_release</span><span class="p">,</span>
 <span class="p">};</span>
 </code></pre></div>
-
 <p><code>vfio_group_fops_open</code>函数核心逻辑就是要找到这个设备所属于的<code>vfio_group</code>并把它赋给这个file，那这个<code>vfio_group</code>是在设备bind到<code>vfio_pci</code>的时候创建的。紧接着会判断这个设备的vfio group是否可用，相关逻辑如下：</p>
 <div class="highlight"><pre><span></span><code><span class="w">  </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">ioctl</span><span class="p">(</span><span class="kr">group</span><span class="o">-&gt;</span><span class="n">fd</span><span class="p">,</span><span class="w"> </span><span class="n">VFIO_GROUP_GET_STATUS</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">status</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">error_setg_errno</span><span class="p">(</span><span class="n">errp</span><span class="p">,</span><span class="w"> </span><span class="n">errno</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;failed to get group %d status&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">groupid</span><span class="p">);</span>
+<span class="w">        </span><span class="n">error_setg_errno</span><span class="p">(</span><span class="n">errp</span><span class="p">,</span><span class="w"> </span><span class="n">errno</span><span class="p">,</span><span class="w"> </span><span class="s">"failed to get group %d status"</span><span class="p">,</span><span class="w"> </span><span class="n">groupid</span><span class="p">);</span>
 <span class="w">        </span><span class="n">goto</span><span class="w"> </span><span class="n">close_fd_exit</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">status</span><span class="p">.</span><span class="n">flags</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="n">VFIO_GROUP_FLAGS_VIABLE</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">error_setg</span><span class="p">(</span><span class="n">errp</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;group %d is not viable&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">groupid</span><span class="p">);</span>
+<span class="w">        </span><span class="n">error_setg</span><span class="p">(</span><span class="n">errp</span><span class="p">,</span><span class="w"> </span><span class="s">"group %d is not viable"</span><span class="p">,</span><span class="w"> </span><span class="n">groupid</span><span class="p">);</span>
 <span class="w">        </span><span class="n">error_append_hint</span><span class="p">(</span><span class="n">errp</span><span class="p">,</span>
-<span class="w">                          </span><span class="s">&quot;Please ensure all devices within the iommu_group &quot;</span>
-<span class="w">                          </span><span class="s">&quot;are bound to their vfio bus driver.\n&quot;</span><span class="p">);</span>
+<span class="w">                          </span><span class="s">"Please ensure all devices within the iommu_group "</span>
+<span class="w">                          </span><span class="s">"are bound to their vfio bus driver.\n"</span><span class="p">);</span>
 <span class="w">        </span><span class="n">goto</span><span class="w"> </span><span class="n">close_fd_exit</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 </code></pre></div>
-
 <p>通过ioctl调到vfio模块当中，具体的逻辑如下：</p>
 <div class="highlight"><pre><span></span><code><span class="w">   </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">vfio_group_viable</span><span class="p">(</span><span class="kr">group</span><span class="p">))</span>
 <span class="w">            </span><span class="n">status</span><span class="p">.</span><span class="n">flags</span><span class="w"> </span><span class="o">|=</span><span class="w"> </span><span class="n">VFIO_GROUP_FLAGS_VIABLE</span><span class="p">;</span>
@@ -488,7 +465,6 @@
 <span class="w">    </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="kr">group</span><span class="o">-&gt;</span><span class="n">container</span><span class="p">)</span>
 <span class="w">             </span><span class="n">status</span><span class="p">.</span><span class="n">flags</span><span class="w"> </span><span class="o">|=</span><span class="w"> </span><span class="n">VFIO_GROUP_FLAGS_CONTAINER_SET</span><span class="p">;</span>
 </code></pre></div>
-
 <p>紧接着会调用<code>vfio_connect_container</code>， 这个container是vfio层面的一个概念，它跟vm的address space相关联，这个函数的具体逻辑如下：</p>
 <ul>
 <li>
@@ -498,9 +474,8 @@
 <p>如果container不存在，则需要先创建出来，具体的创建逻辑如下</p>
 </li>
 </ul>
-<div class="highlight"><pre><span></span><code>fd = qemu_open(&quot;/dev/vfio/vfio&quot;, O_RDWR);
+<div class="highlight"><pre><span></span><code>fd = qemu_open("/dev/vfio/vfio", O_RDWR);
 </code></pre></div>
-
 <p>这个container就是这在个时候创建出来的，它在vfio层调用的是vfio_ops的open函数，具体如下：</p>
 <div class="highlight"><pre><span></span><code>static int vfio_fops_open(struct inode *inode, struct file *filep)
 {
@@ -519,7 +494,6 @@
         return 0;
 }
 </code></pre></div>
-
 <p>接着调用<code>vfio_init_container</code>函数，首先去获取一下<code>iommu_type</code>，目前的逻辑是<code>VFIO_TYPE1v2_IOMMU</code>优先(在driver/vfio/vfio_iommu_type1.c)，然后通过<code>VFIO_GROUP_SET_CONTAINER</code>这个ioctl具体做的事情。它最终会调到<code>vfio_group_set_container</code> 这个函数，其核心逻辑如下:</p>
 <div class="highlight"><pre><span></span><code><span class="w">        </span><span class="n">driver</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">container</span><span class="o">-&gt;</span><span class="n">iommu_driver</span><span class="p">;</span>
 <span class="w">        </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">driver</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -529,7 +503,6 @@
 <span class="w">                        </span><span class="n">goto</span><span class="w"> </span><span class="n">unlock_out</span><span class="p">;</span>
 <span class="w">        </span><span class="p">}</span>
 </code></pre></div>
-
 <p>注意这个时候由于driver目前还没有设置所以为空，故这个函数主要的作用就是把这个设备所属的vfio_group跟这个container关联起来，然后将这个vfio_group添加到container的group_list。接着调用<code>VFIO_SET_IOMMU</code>这个ioctl为这个container做相关配置，入口函数为<code>vfio_ioctl_set_iommu</code>具体逻辑如下：</p>
 <ul>
 <li>
@@ -564,7 +537,6 @@
 <span class="w">        </span><span class="nt">return</span><span class="w"> </span><span class="nt">ret</span><span class="o">;</span>
 <span class="err">}</span>
 </code></pre></div>
-
 <p>从实现来看，遍历<code>container-&gt;group_list</code>里面的group（这个时候应该只有一个)，然后调用<code>attach_group</code> 这个callback函数，其最终调用的函数为<code>vfio_iommu_type1_attach_group</code> ，下面看一下这个函数核心逻辑：</p>
 <ol>
 <li>
@@ -590,11 +562,11 @@
 
 <span class="w">        </span><span class="nx">dmar_domain</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">alloc_domain</span><span class="p">(</span><span class="nx">DOMAIN_FLAG_VIRTUAL_MACHINE</span><span class="p">);</span>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(!</span><span class="nx">dmar_domain</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="nx">pr_err</span><span class="p">(</span><span class="s">&quot;Can&#39;t allocate dmar_domain\n&quot;</span><span class="p">);</span>
+<span class="w">                </span><span class="nx">pr_err</span><span class="p">(</span><span class="s">"Can't allocate dmar_domain\n"</span><span class="p">);</span>
 <span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="nx">NULL</span><span class="p">;</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">md_domain_init</span><span class="p">(</span><span class="nx">dmar_domain</span><span class="p">,</span><span class="w"> </span><span class="nx">DEFAULT_DOMAIN_ADDRESS_WIDTH</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="nx">pr_err</span><span class="p">(</span><span class="s">&quot;Domain initialization failed\n&quot;</span><span class="p">);</span>
+<span class="w">                </span><span class="nx">pr_err</span><span class="p">(</span><span class="s">"Domain initialization failed\n"</span><span class="p">);</span>
 <span class="w">                </span><span class="nx">domain_exit</span><span class="p">(</span><span class="nx">dmar_domain</span><span class="p">);</span>
 <span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="nx">NULL</span><span class="p">;</span>
 <span class="w">        </span><span class="p">}</span>
@@ -608,7 +580,6 @@
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">domain</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-
 <p>其核心逻辑为创建dmar_domain，然后初始化iova页表的pgd</p>
 <div class="highlight"><pre><span></span><code><span class="nx">static</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="nx">md_domain_init</span><span class="p">(</span><span class="nx">struct</span><span class="w"> </span><span class="nx">dmar_domain</span><span class="w"> </span><span class="o">*</span><span class="nx">domain</span><span class="p">,</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="nx">guest_width</span><span class="p">)</span>
 <span class="p">{</span>
@@ -636,7 +607,6 @@
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-
 <p>紧接着调用 <code>iommu_attach_group</code>，将<code>iommu_group</code>下面的设备绑定到新建的iommu_domain上，函数最终会调到<code>intel_iommu_attach_device</code> 这个函数，具体的调用逻辑如下：</p>
 <blockquote>
 <ul>
@@ -652,7 +622,6 @@
 <div class="highlight"><pre><span></span><code><span class="w">    </span><span class="n">INIT_LIST_HEAD</span><span class="p">(</span><span class="o">&amp;</span><span class="n">domain</span><span class="o">-&gt;</span><span class="n">group_list</span><span class="p">);</span>
 <span class="w">    </span><span class="n">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="kr">group</span><span class="o">-&gt;</span><span class="n">next</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">domain</span><span class="o">-&gt;</span><span class="n">group_list</span><span class="p">)</span>
 </code></pre></div>
-
 <p>接着往下看相关的逻辑</p>
 <div class="highlight"><pre><span></span><code><span class="w">        </span><span class="n">list_for_each_entry</span><span class="p">(</span><span class="n">d</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">iommu</span><span class="o">-&gt;</span><span class="n">domain_list</span><span class="p">,</span><span class="w"> </span><span class="n">next</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">d</span><span class="o">-&gt;</span><span class="n">domain</span><span class="o">-&gt;</span><span class="n">ops</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">domain</span><span class="o">-&gt;</span><span class="n">domain</span><span class="o">-&gt;</span><span class="n">ops</span><span class="w"> </span><span class="o">&amp;&amp;</span>
@@ -672,7 +641,6 @@
 <span class="w">                </span><span class="p">}</span>
 <span class="w">        </span><span class="p">}</span>
 </code></pre></div>
-
 <p>为了更好的理解上面的这段逻辑，先回忆下这几个概念：container, vfio_iommu, vfio_group, <code>vfio_domain</code>。其中container是per vm的也就是说一个vm只会有一个container；<code>vfio_iommu</code>是在container初始化的时候创建的，它也是per vm的；<code>vfio_group</code>跟<code>iommu_group</code>是一一对应的，有多少个<code>iommu_group</code>就应该有多少个<code>vfio_group</code>；关于<code>vfio_domain</code>数量我们需要分析一下上面的代码片段，从实现来看<strong>如果新创建的domain的ops和prot(属性IOMMU_CACHE, IOMMU_READ, IOMMU_WRITE)跟已经存在的domain相同则直接把这个iommu_group直接attach到已存在的domain上，也就是说多个iommu_group或者说vfio_group对应一个vfio_domain</strong>。接着往下继续，如果不满足上面所说的条件(或者初次创建iommu domain_list为空的时候)则</p>
 <div class="highlight"><pre><span></span><code><span class="w"> </span><span class="o">/*</span><span class="w"> </span><span class="n">replay</span><span class="w"> </span><span class="n">mappings</span><span class="w"> </span><span class="n">on</span><span class="w"> </span><span class="n">new</span><span class="w"> </span><span class="n">domains</span><span class="w"> </span><span class="o">*/</span>
 <span class="w"> </span><span class="n">ret</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">vfio_iommu_replay</span><span class="p">(</span><span class="n">iommu</span><span class="p">,</span><span class="w"> </span><span class="n">domain</span><span class="p">);</span>
@@ -681,17 +649,14 @@
 <span class="c1">// 将新创建的domain加到vfio_iommu的domain_list链表里面</span>
 <span class="w"> </span><span class="n">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">domain</span><span class="o">-&gt;</span><span class="n">next</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">iommu</span><span class="o">-&gt;</span><span class="n">domain_list</span><span class="p">);</span>
 </code></pre></div>
-
 <p><code>vfio_iommu_replay</code> 这个函数的主要逻辑是找到<code>iommu-&gt;domain_list</code> 的第一个domain，然后把<code>iommu-&gt;dma_list</code> 下的所有的dma区域全部mapping到新创建的domain里面(当然在初始化阶段这两者都是为空的)。之所以是第一个是因为新创建的domain都是插在domain_list的首部，而头部的domain mapping里面包含了其后面的所有domain的dma mapping。核心逻辑走完，回到<code>vfio_ioctl_set_iommu</code> 函数，这里会把找到的driver和新创建的<code>vfio_iommu</code>赋值给container</p>
 <div class="highlight"><pre><span></span><code><span class="nx">container</span><span class="o">-&gt;</span><span class="nx">iommu_driver</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">driver</span><span class="p">;</span><span class="w"> </span><span class="c1">//vfio iommu type1</span>
 <span class="nx">container</span><span class="o">-&gt;</span><span class="nx">iommu_data</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">data</span><span class="p">;</span><span class="w"> </span><span class="c1">// vfio_iommu</span>
 </code></pre></div>
-
 <p>至此，vfio_realize当中跟vm dma相关数据结构初始化有关的工作已经完成，那我们看一下dma 页表的初始化。qemu当中是通过注册memory region listener callback来将vm所有的内存都mapping起来的，具体调用逻辑</p>
 <div class="highlight"><pre><span></span><code><span class="nx">vfio_dma_map</span><span class="p">(</span><span class="nx">container</span><span class="p">,</span><span class="w"> </span><span class="nx">iova</span><span class="p">,</span><span class="w"> </span><span class="nx">int128_get64</span><span class="p">(</span><span class="nx">llsize</span><span class="p">),</span>
 <span class="w">                       </span><span class="nx">vaddr</span><span class="p">,</span><span class="w"> </span><span class="nx">section</span><span class="o">-&gt;</span><span class="nx">readonly</span><span class="p">);</span>
 </code></pre></div>
-
 <p>这里面iova就是gpa， vaddr就是hva，它是通过<code>VFIO_IOMMU_MAP_DMA</code> 这个系统调用来实现的，然后继续追一下这个系统调用的实现</p>
 <blockquote>
 <ul>
@@ -718,71 +683,41 @@ Q: 在非虚拟化场景下iommu=pt和iommu disabled这两者有什么区别？<
 <p>A： 虚拟机里面没有iommu那么其所有使用dma map的地方返回的都是gpa，在直通的场景需要需要借助于iommu dma remapping机制才能正常工作。</p>
 <p>Q：不同intel iommu硬件下的两个pci设备是如何实现直通给同一个vm的？</p>
 <p>A： 不同intel_iommu的两上pci设备直通给同一个vm的时候，这两个设备使用的iova页表的基地是一样的，即同一个dmar_domain的pgd。</p>
-
-
-             
- 
-            
-            
-            
-
-
-
-
-
-
-            <hr/>
-        </div>
-        <section id="article-sidebar" class="span2">
-            <h4>Published</h4>
-            <time itemprop="dateCreated" datetime="2022-02-06T00:00:00+08:00"> 2 6, 2022</time>
-            <h4>Category</h4>
-            <a class="category-link" href="https://kernelnote.com/categories.html#articles-ref">articles</a>
-            <h4>Tags</h4>
-            <ul class="list-of-tags tags-in-article">
-                <li><a href="https://kernelnote.com/tags.html#iommu-ref">iommu
+<hr/>
+</div>
+<section class="span2" id="article-sidebar">
+<h4>Published</h4>
+<time datetime="2022-02-06T00:00:00+08:00" itemprop="dateCreated"> 2 6, 2022</time>
+<h4>Category</h4>
+<a class="category-link" href="https://kernelnote.com/categories.html#articles-ref">articles</a>
+<h4>Tags</h4>
+<ul class="list-of-tags tags-in-article">
+<li><a href="https://kernelnote.com/tags.html#iommu-ref">iommu
                     <span>5</span>
 </a></li>
-            </ul>
-            
-
-
-
-
-
-            
-
-
-
-
-
-        </section>
+</ul>
+</section>
 </div>
 </article>
-                    </div>
-                    <div class="span1"></div>
-                </div>
-            </div>
-        </div>
+</div>
+<div class="span1"></div>
+</div>
+</div>
+</div>
 <footer>
-
-
-
-
-    <div id="fpowered">
-        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
-        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
-    </div>
-</footer>            <script src="//code.jquery.com/jquery.min.js"></script>
-        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
-        <script>
+<div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" rel="nofollow noopener noreferrer" target="_blank" title="Pelican Home Page">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" rel="nofollow noopener noreferrer" target="_blank" title="Theme Elegant Home Page">Elegant</a>
+</div>
+</footer> <script src="//code.jquery.com/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+<script>
             function validateForm(query)
             {
                 return (query.length > 0);
             }
         </script>
-
-    <script>
+<script>
     (function () {
         if (window.location.hash.match(/^#comment-\d+$/)) {
             $('#comment_thread').collapse('show');
@@ -805,8 +740,7 @@ Q: 在非虚拟化场景下iommu=pt和iommu disabled这两者有什么区别？<
         })
     })
 </script>
-
-    </body>
-    <!-- Theme: Elegant built for Pelican
+</body>
+<!-- Theme: Elegant built for Pelican
         License : MIT -->
 </html>
