@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+
+<html lang="zh_cn">
+<head>
+<meta charset="utf-8"/>
+<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="duma" name="author">
+<meta content="article" property="og:type">
+<meta content="summary" name="twitter:card"/>
+<meta content="PCIe, PCIe ATS, ACS, articles, " name="keywords">
+<meta content="一文带你深入了解 PCIe ATS " property="og:title">
+<meta content="https://kernelnote.com/deep-dive-pcie-ats.html" property="og:url"/>
+<meta content="背景 ATS 是Address Translation Service 的缩写，它的提出主要是为了缓解iommu硬件iova转换的压力。尤其是当设备上有大量的DMA working sets时，ATS能够有效的减少因为PCIe链路压力过大导致的设备性能抖动。ATS由位于PCIe设备上的ATC(Address Translation Cache) 和 Translaion Agent(TA，通常也是位 …" property="og:description"/>
+<meta content="kernelnote" property="og:site_name"/>
+<meta content="duma" property="og:article:author"/>
+<meta content="2022-04-10T00:00:00+08:00" property="og:article:published_time"/>
+<meta content="一文带你深入了解 PCIe ATS " name="twitter:title"/>
+<meta content="背景 ATS 是Address Translation Service 的缩写，它的提出主要是为了缓解iommu硬件iova转换的压力。尤其是当设备上有大量的DMA working sets时，ATS能够有效的减少因为PCIe链路压力过大导致的设备性能抖动。ATS由位于PCIe设备上的ATC(Address Translation Cache) 和 Translaion Agent(TA，通常也是位 …" name="twitter:description"/>
+<title>一文带你深入了解 PCIe ATS  · kernelnote
+</title>
+<link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet"/>
+<link href="https://kernelnote.com/theme/css/elegant.prod.css" media="screen" rel="stylesheet" type="text/css"/>
+<link href="https://kernelnote.com/theme/css/custom.css" media="screen" rel="stylesheet" type="text/css"/>
+</meta></meta></meta></meta><link href="https://kernelnote.com/deep-dive-pcie-ats.html" rel="canonical"/><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "kernelnote", "item": "https://kernelnote.com"}, {"@type": "ListItem", "position": 2, "name": "Deep dive pcie ats", "item": "https://kernelnote.com/deep-dive-pcie-ats.html"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "author": {"@type": "Person", "name": "duma"}, "publisher": {"@type": "Organization", "name": "kernelnote"}, "headline": "一文带你深入了解 PCIe ATS", "about": "articles", "datePublished": "2022-04-10 00:00"}</script></head>
+<body>
+<div id="content">
+<div class="navbar navbar-static-top">
+<div class="navbar-inner">
+<div class="container-fluid">
+<a class="btn btn-navbar" data-target=".nav-collapse" data-toggle="collapse">
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+</a>
+<a class="brand" href="https://kernelnote.com/"><span class="site-name">kernelnote</span></a>
+<div class="nav-collapse collapse">
+<ul class="nav pull-right top-menu">
+<li>
+<a href="https://kernelnote.com">Home</a>
+</li>
+<li><a href="https://kernelnote.com/pages/about.html">about</a></li>
+<li><a href="https://kernelnote.com/categories.html">Categories</a></li>
+<li><a href="https://kernelnote.com/tags.html">Tags</a></li>
+<li><a href="https://kernelnote.com/archives.html">Archives</a></li>
+<li><form action="https://kernelnote.com/search.html" class="navbar-search" onsubmit="return validateForm(this.elements['q'].value);"> <input class="search-query" id="tipue_search_input" name="q" placeholder="Search" type="text"/></form></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="container-fluid">
+<div class="row-fluid">
+<div class="span1"></div>
+<div class="span10">
+<article itemscope="">
+<div class="row-fluid">
+<header class="page-header span10 offset2">
+<h1>
+<a href="https://kernelnote.com/deep-dive-pcie-ats.html">
+                一文带你深入了解 PCIe ATS
+            </a>
+</h1>
+</header>
+</div>
+<div class="row-fluid">
+<div class="span8 offset2 article-content">
+<h4>背景</h4>
+<p>ATS 是Address Translation Service 的缩写，它的提出主要是为了缓解iommu硬件iova转换的压力。尤其是当设备上有大量的DMA working sets时，ATS能够有效的减少因为PCIe链路压力过大导致的设备性能抖动。ATS由位于PCIe设备上的ATC(Address Translation Cache) 和 Translaion Agent(TA，通常也是位于iommu硬件上)组成。ATC的作用可以跟cpu端的TLB来做类比，因此它也经常被称为Device TLB。ATC里面存储的主要是iova到hpa的映射关系，当ATC发生miss的时候需要跟TA之间进行一些交互。在这篇文章里面我们将聚焦在这几个问题上：</p>
+<ul>
+<li>
+<p>硬件架构和使能</p>
+</li>
+<li>
+<p>ATC和TA之间的交互机制</p>
+</li>
+</ul>
+<h4>硬件架构和使能</h4>
+<p><img alt="ats" src="images/ats.png"/>
+<center> 图1</center></p>
+<p>整个架构如图1所示，这里需要说明的是TA是iommu的一部分，它主要负责iova的转换以及通过ATPT来判断某个设备是否有权限access 某段内存；另外，从上图可以看到支持ATC 功能的设备在拓扑结构上可分为三类：一类是直接链接到RC上，一类是直接链接到root port上，最后一类是通过Switch链接到RP上。后两类拓扑结构如果PCIe 设备要enable ATS功能则Root Port必须要支持ATS功能。</p>
+<p>聊完硬件构架，我们再来聊聊一下ATS功能的enable。首先，在iommu侧必须要能支持ATS 功能，这一点是通过<strong>iommu ecap register当中的DT位来表示其是否支持ATS功能</strong>。接着，我们来看一下RP支持ATS是如何report的。基于我们在<a href="https://mp.weixin.qq.com/s/3VQ_i65e8oh7W7goCfoHhw">iommu硬件架构和驱动初始化</a> 这篇文章当中的介绍可以知道，在系统启动过程中bios会通过DMAR ACPI 表来获取 DMA remapping structures，而这些structures当中有一类就是 <strong><code>Root Port ATS Capability Reporting (ATSR) Structure</code></strong> 。</p>
+<p>接下来我们看一下PCIe 设备对ATS的支持，在pcie config space侧相关的 capability and register 具体如下:</p>
+<p><img alt="pcie_ats_cap" src="images/pcie_ats_cap.png"/>
+<center> 图2 </center></p>
+<ul>
+<li>ATS extend capability header(offset 00h)</li>
+</ul>
+<p><img alt="pcie_cap_header" src="images/pcie_cap_header.png"/>
+<center> 图3</center>
+如图3所示，bits 15:0表示 pcie ecap id必须是0x00F，bits 19:16 表示cap version必须为1，bits 31:20表示next cap offset。</p>
+<ul>
+<li>ATS capability register(offset 04h)
+ATS 的cap register长度为15bits，其中bits 15:8为reserved，其余各bits定义如下</li>
+</ul>
+<p><img alt="ats_cap_register" src="images/ats_cap_register.png"/>
+<center> 图4</center></p>
+<ul>
+<li>ATS Control Register (Offset 06h)</li>
+</ul>
+<p>ATS control register 长度为15bits，具体格式如下</p>
+<p><img alt="ats_ctrl_reg" src="images/ats_ctrl_reg.png"/></p>
+<p><center> 图5</center>
+相关的硬件底层的架构已经说清楚了，下面我们看一下在软件侧的使能。ATS的enable是在intel iommu侧执行的，相关代码如下</p>
+<div class="highlight"><pre><span></span><code><span class="p">......</span>
+
+<span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">ecap_dev_iotlb_support</span><span class="p">(</span><span class="n">iommu</span><span class="o">-&gt;</span><span class="n">ecap</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="w">        </span><span class="n">pci_ats_supported</span><span class="p">(</span><span class="n">pdev</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">dmar_find_matched_atsr_unit</span><span class="p">(</span><span class="n">pdev</span><span class="p">))</span>
+<span class="w">    </span><span class="n">info</span><span class="o">-&gt;</span><span class="n">ats_supported</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+
+<span class="p">......</span>
+</code></pre></div>
+<p>这段代码取自函数<code>dmar_insert_one_dev_info</code> 如果大家感兴趣可以去翻阅一下intel iommu的代码。我们接着分析这段代码的三个必要条件</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="n">ecap_dev_iotlb_support</span><span class="p">(</span><span class="n">iommu</span><span class="o">-&gt;</span><span class="n">ecap</span><span class="p">)</span><span class="c1">// 即判断iommu 硬件 ecap的DT位是否为1</span>
+<span class="w">    </span><span class="n">pci_ats_supported</span><span class="p">(</span><span class="n">pdev</span><span class="p">)</span><span class="w"> </span><span class="c1">// 判断pcie 设备有没有ats cap</span>
+<span class="w">    </span><span class="n">dmar_find_matched_atsr_unit</span><span class="p">(</span><span class="n">pdev</span><span class="p">)</span><span class="w"> </span><span class="c1">//如果该pcie设备直接挂在RC上则返回true，如果该设备挂在RP上则判断RP是否支持ATS。</span>
+</code></pre></div>
+<p>如果上面三个条件都为真时则表示这个设备是可以eanble ATS的，然后在<code>iommu_enable_dev_iotlb</code> 函数里面会调用<code>pci_enable_ats</code> 在设备侧使能ATS feature(将ATS Control Register 第15位置1)。</p>
+<h4>ATC和TA之间的交互</h4>
+<p>聊完了相关的硬件架构和feature使能，下面我们来聊一下ATC和TA之间的交互，下面一张图能够让大家有一个整体的认知</p>
+<p><img alt="dtlb_inter" src="images/dtlb_inter.png"/>
+<center> 图6</center></p>
+<p>相关交互协议的种类如上图所示，为了区别开来这几中协议，ATS在TLP的header里面添加了一个额外的AT field，具体的示意如下图所示：</p>
+<p><img alt="at_field" src="images/at_field.png"/>
+<center> 图7</center>
+接下来我们具体分析一下相关的交互协议：</p>
+<h5>Translation request</h5>
+<p>先说一下Translation request使用的场景，当device ATC发生cache miss的时候设备通过生成一个Translation request 到TA，TA将需要翻译的iova对应的hpa返回给device，然后device把结果update到ATC里面。ATS的Translation request 格式跟 pcie 的memory read请求基本相同，唯一区别就是多了一个AT field。按照图7当中的定义，translation request AT必须01b。具体格式如下图所示</p>
+<p><img alt="ats_trans_req" src="images/ats_trans_req.png"/></p>
+<p><center> 图8</center>
+结合上面的图示我们来解析一下相关字段的示意。</p>
+<ul>
+<li>Length field</li>
+</ul>
+<p>该字段表示TA要返回多少个translation，每个translation大小为8bytes即64bit也就是一个iova地址的长度。length的大小通常用偶数个DWORDS来表示，最小值为2个DWORDS。之所以这么做是因为2个DWORDS刚好是一个iova地址大小，因此TA返回给设备的个数<strong>最多为Length/2个翻译结果</strong>。为什么是最多呢？我们接着往下分析，当length等于2时只返回一个translation结果即<code>Untranslated address</code> field所对应的iova地址的hpa；当length大于2时则返回的个数就大于1了，那么这时需要返回的结果所对应的iova的地址就是一个范围了，这个地址范围如何界定呢？这里就需要提到STU了(具体见图5当中所示) 通常在x86下stu的大小为4kB，那么在这种场景下<code>Untranslated address</code> field所对应的iova地址为起始地址，其范围为 <code>iova ~ iova+4K *（length/2)</code> ，step 大小为stu。再来说说为什么是最多返回length/2个，这个就得说一下<code>IOMMU PAGE SIZE</code> 了，一般情况下常用的<code>IOMMU PAGE SIZE</code> 大小可以分为4k，2M， 1G。如果iommu page size 大于4K比如2M，因为是连续的所以只需要返回初始iova对应的translation就行了。</p>
+<ul>
+<li>Untranslated address field</li>
+</ul>
+<p>TA需要返回的translation所对应的iova地址，当length 大于2个DWORDS时为某一范围地址的初始值。</p>
+<ul>
+<li>No Write（NW） flag</li>
+</ul>
+<p>当NW位置上时表示设备对该translation只能进行读操作。</p>
+<h5>Translation completion</h5>
+<p>针对上面的Translation request，如果TA无法正常处理则返回不带数据的结果并且通过status field来说明更具体的信息，相关的status code如下</p>
+<p><img alt="status_code" src="images/status_code.png"/>
+<center> 图9</center></p>
+<p>如果translation request被TA正常处理，则在completion当中会带相应的translation的结果，相关返回信息如下
+<img alt="translation_success_h" src="images/translation_success_h.png"/>
+<center> 图10</center>
+<img alt="translation_success_d" src="images/translation_success_d.png"/>
+<center> 图11</center></p>
+<p>结合上面的两张图我们来介绍几个需要重点关注的字段</p>
+<ul>
+<li>Read permission(R) </li>
+</ul>
+<p>如果置上则表示对这段返回的translation中的物理地址只能进行读操作。</p>
+<ul>
+<li>Write permission(w)</li>
+</ul>
+<p>如果置上则表示对这段返回的translation中的物理地址只能进行写操作。</p>
+<ul>
+<li>Untranslated access only flag(U)</li>
+</ul>
+<p>如果置上，则表示设备只能通过 <code>untranslated-request</code>的方式对这段返回的translation中的物理地址进行访问。</p>
+<ul>
+<li>Translated Address</li>
+</ul>
+<p>如果R 或者W置上且U位被clear，则translated Address当中的地址就可以被设备缓存在自己的ATC当中用来iova的转换了。</p>
+<ul>
+<li>S </li>
+</ul>
+<p>它表示translation rang的大小，如果S位置上则表示这个translation 的范围要大于4kB，其实这里跟上面讲到的translation request的length是遥相呼应的。上面也有讲到如果request里面要设置的返回结果大于一个stu且PAGE SIZE是连续的情况下是不需要返回指定的Length/2个结果，但是你必须要在返回的地址里面告诉device这个连续的range范围是多大，具体的信息我们可以看下面这张图</p>
+<p><img alt="trans_rang" src="images/trans_rang.png"/>
+<center> 图 12</center></p>
+<p>如上图所示不同大小的translation range size对应不同的address bits。以2M为例子，它的对所应的translation 结果的有效位为bits 63:21，则对某个iova进行转换的时候只需要Translated address[63:21] + iova[20:0] 即得到相应的hpa。</p>
+<h5>Translated request</h5>
+<p>当设备发起DMA的时候，设备就可以通过在本地的ATC先进行转换得到相应的hpa，然后将AT field 设置为10b。如果request能够通过TA的相关验证，则相关的请求会以passthrough形式进行处理即不再走iova到hpa的翻译流程。</p>
+<h5>Invalidation request</h5>
+<p>ATS通过这个协议来保证TA和ATC之间的数据一致性，当相关的translation 在TA侧发生变化时，TA需要触发一个Invalidate Request到ATC进行相关信息的同步。下面我们看一下invalidate request 具体信息</p>
+<p><img alt="invalidate_msg" src="images/invalidate_msg.png"/></p>
+<p><img alt="invalidate_msg_body" src="images/invalidate_msg_body.png"/></p>
+<p><center> 图13</center>
+invalidate request由 header 和message body组成，这里介绍几个需要重点关注的标志位</p>
+<ul>
+<li>ITag</li>
+</ul>
+<p>TA侧用来标识它发起来的invalidate request，每个request的ITag都是不能重复的，它的大小为0~31。</p>
+<ul>
+<li>S </li>
+</ul>
+<p>同translation request 当中的S位，表示要invalidate的地址范围。</p>
+<ul>
+<li>Utranslated Address</li>
+</ul>
+<p>需要invalidated 的地址范围的起始地址</p>
+<ul>
+<li>Global Invalidate</li>
+</ul>
+<p>这个标志位主要是针对PASID的场景，如果这个标志位置上，则表示这个BDF下面的所有的PASID都会被invalidate掉。如果这个invalidate request 是带有PASID 的 prefix的则这一位将不起作用。</p>
+<h5>Invalidate completion</h5>
+<p>当设备完成invalidate操作之后需要给TA发送invalidate completion messages。messages 具体的格式如下</p>
+<p><img alt="ats_invalidate_cmp" src="images/ats_invalidate_cmp.png"/></p>
+<p><center> 图14</center>
+结合上面的图我们来解释一下几个重要的field</p>
+<ul>
+<li>Completion Count(CC)</li>
+</ul>
+<p>针对每一个invalidate request要发出的 completion的个数，注意这个数字跟TC(traffic class)有关系，它主要是用来对PCIe链路进行QOS的，通常情况下每个pcie设备都必须实现一个defautl的TC即TC0此时TC field 的值为000b；当TC field的值为001~111时则表示TC1~TC7，它们有些不同的服务等级。在invalidate completion的场景下，如果设备只实现的默认的TC0的情况下，那么每个一个invalidate request只需要返回一个invalidate completion 即 cc = 1，否则就需要对每个TC返回一个invalidate completion即8个，那么此时cc = 8。</p>
+<ul>
+<li>ITag Vector</li>
+</ul>
+<p>itag vector总共有32bits，它其中的每一个bit都对应着一个invalidate request。</p>
+<p>关于这个invalidate translation的整个流程，大家可以参考一下如下这张图，相信通过这张图你能有个比较清晰的认知。</p>
+<p><img alt="invalidate_process" src="images/invalidate_process.png"/></p>
+<p><center> 图15</center></p>
+<p>后面的page request我这里就不细讲了，如果大家感兴趣可以看看相关的spec。</p>
+<h4>总结&amp;思考</h4>
+<p>ATS之于iommu就相当于TLB之于cpu，其起到的作用不言自明。但是目前支持ATS的设备并不多，一方面是因为大部分业务场景下对这一块感知并不明显，那部分感知比较明显的比如HPC，机器学习这些业务主要依赖GPU，NV针对这些limit也早就做了优化比如gpudirect等；还就是在设备上增加cache也是需要成本的，本来设备上的SRAM也没有多大，另外就是非虚拟化场景intel iommu也支持PT的方式从而避免了iova的转换的开销。</p>
+<p>但是随着云原生和serverless的出现，可能就不一样了。举个例子，一台128核的icelake(后面的SPR有256核)最多能启动512台kata容器，按照每个容器一块磁盘一张网卡那么在dpu架构上也是需要1024块设备的，这种场景下对iommu侧的冲击就比较大了，此时ATS的作用就比较明显了。</p>
+<h5>相关参考</h5>
+<ul>
+<li>pcie  ATS spec </li>
+</ul>
+<hr/>
+</div>
+<section class="span2" id="article-sidebar">
+<h4>Published</h4>
+<time datetime="2022-04-10T00:00:00+08:00" itemprop="dateCreated"> 4 10, 2022</time>
+<h4>Category</h4>
+<a class="category-link" href="https://kernelnote.com/categories.html#articles-ref">articles</a>
+<h4>Tags</h4>
+<ul class="list-of-tags tags-in-article">
+<li><a href="https://kernelnote.com/tags.html#acs-ref">ACS
+                    <span>1</span>
+</a></li>
+<li><a href="https://kernelnote.com/tags.html#pcie-ref">PCIe
+                    <span>2</span>
+</a></li>
+<li><a href="https://kernelnote.com/tags.html#pcie-ats-ref">PCIe ATS
+                    <span>1</span>
+</a></li>
+</ul>
+</section>
+</div>
+</article>
+</div>
+<div class="span1"></div>
+</div>
+</div>
+</div>
+<footer>
+<div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" rel="nofollow noopener noreferrer" target="_blank" title="Pelican Home Page">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" rel="nofollow noopener noreferrer" target="_blank" title="Theme Elegant Home Page">Elegant</a>
+</div>
+</footer> <script src="//code.jquery.com/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+<script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+<script>
+    (function () {
+        if (window.location.hash.match(/^#comment-\d+$/)) {
+            $('#comment_thread').collapse('show');
+        }
+    })();
+    window.onhashchange=function(){
+        if (window.location.hash.match(/^#comment-\d+$/))
+            window.location.reload(true);
+    }
+    $('#comment_thread').on('shown', function () {
+        var link = document.getElementById('comment-accordion-toggle');
+        var old_innerHTML = link.innerHTML;
+        $(link).fadeOut(200, function() {
+            $(this).text('Click here to hide comments').fadeIn(200);
+        });
+        $('#comment_thread').on('hidden', function () {
+            $(link).fadeOut(200, function() {
+                $(this).text(old_innerHTML).fadeIn(200);
+            });
+        })
+    })
+</script>
+</body>
+<!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>
