@@ -10,7 +10,7 @@
 <meta content="summary" name="twitter:card"/>
 <meta content="iommu, interrut remapping, articles, " name="keywords">
 <meta content="深入了解iommu系列四：interrupt remapping 工作机制解析 " property="og:title">
-<meta content="https://kernelnote.com/deep-dive-how-interrup-remapping-work.html" property="og:url"/>
+<meta content="./deep-dive-how-interrup-remapping-work.html" property="og:url"/>
 <meta content="序言 系列三主要分析了interrupt remaping底层硬件的架构设计和工作原理，同时也简要的描述了一下interrupt remapping在操作系统层面的初始化流程。那么这一篇我们来仔细分析一下它到底是如何工作的。 工作 …" property="og:description"/>
 <meta content="kernelnote" property="og:site_name"/>
 <meta content="duma" property="og:article:author"/>
@@ -20,9 +20,10 @@
 <title>深入了解iommu系列四：interrupt remapping 工作机制解析  · kernelnote
 </title>
 <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet"/>
-<link href="https://kernelnote.com/theme/css/elegant.prod.css" media="screen" rel="stylesheet" type="text/css"/>
-<link href="https://kernelnote.com/theme/css/custom.css" media="screen" rel="stylesheet" type="text/css"/>
-</meta></meta></meta></meta><link href="https://kernelnote.com/deep-dive-how-interrup-remapping-work.html" rel="canonical"/><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "kernelnote", "item": "https://kernelnote.com"}, {"@type": "ListItem", "position": 2, "name": "Deep dive how interrup remapping work", "item": "https://kernelnote.com/deep-dive-how-interrup-remapping-work.html"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "author": {"@type": "Person", "name": "duma"}, "publisher": {"@type": "Organization", "name": "kernelnote"}, "headline": "深入了解iommu系列四：interrupt remapping 工作机制解析", "about": "articles", "datePublished": "2022-03-05 00:00"}</script></head>
+<link href="./theme/css/elegant.prod.css" media="screen" rel="stylesheet" type="text/css"/>
+<link href="./theme/css/custom.css" media="screen" rel="stylesheet" type="text/css"/>
+<link href="https://kernelnote.com/feeds/all.atom.xml" rel="alternate" title="kernelnote - Full Atom Feed" type="application/atom+xml">
+</link></meta></meta></meta></meta><link href="https://kernelnote.com/deep-dive-how-interrup-remapping-work.html" rel="canonical"/><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "kernelnote", "item": "https://kernelnote.com"}, {"@type": "ListItem", "position": 2, "name": "Deep dive how interrup remapping work", "item": "https://kernelnote.com/deep-dive-how-interrup-remapping-work.html"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "author": {"@type": "Person", "name": "duma"}, "publisher": {"@type": "Organization", "name": "kernelnote"}, "headline": "深入了解iommu系列四：interrupt remapping 工作机制解析", "about": "articles", "datePublished": "2022-03-05 00:00"}</script></head>
 <body>
 <div id="content">
 <div class="navbar navbar-static-top">
@@ -33,17 +34,17 @@
 <span class="icon-bar"></span>
 <span class="icon-bar"></span>
 </a>
-<a class="brand" href="https://kernelnote.com/"><span class="site-name">kernelnote</span></a>
+<a class="brand" href="./"><span class="site-name">kernelnote</span></a>
 <div class="nav-collapse collapse">
 <ul class="nav pull-right top-menu">
 <li>
-<a href="https://kernelnote.com">Home</a>
+<a href=".">Home</a>
 </li>
-<li><a href="https://kernelnote.com/pages/about.html">about</a></li>
-<li><a href="https://kernelnote.com/categories.html">Categories</a></li>
-<li><a href="https://kernelnote.com/tags.html">Tags</a></li>
-<li><a href="https://kernelnote.com/archives.html">Archives</a></li>
-<li><form action="https://kernelnote.com/search.html" class="navbar-search" onsubmit="return validateForm(this.elements['q'].value);"> <input class="search-query" id="tipue_search_input" name="q" placeholder="Search" type="text"/></form></li>
+<li><a href="./pages/about.html">about</a></li>
+<li><a href="./categories.html">Categories</a></li>
+<li><a href="./tags.html">Tags</a></li>
+<li><a href="./archives.html">Archives</a></li>
+<li><form action="./search.html" class="navbar-search" onsubmit="return validateForm(this.elements['q'].value);"> <input class="search-query" id="tipue_search_input" name="q" placeholder="Search" type="text"/></form></li>
 </ul>
 </div>
 </div>
@@ -57,7 +58,7 @@
 <div class="row-fluid">
 <header class="page-header span10 offset2">
 <h1>
-<a href="https://kernelnote.com/deep-dive-how-interrup-remapping-work.html">
+<a href="./deep-dive-how-interrup-remapping-work.html">
                 深入了解iommu系列四：interrupt remapping 工作机制解析
             </a>
 </h1>
@@ -609,13 +610,13 @@ static bool msi_check_reservation_mode(struct irq_domain *domain,
 <h4>Published</h4>
 <time datetime="2022-03-05T00:00:00+08:00" itemprop="dateCreated"> 3 5, 2022</time>
 <h4>Category</h4>
-<a class="category-link" href="https://kernelnote.com/categories.html#articles-ref">articles</a>
+<a class="category-link" href="./categories.html#articles-ref">articles</a>
 <h4>Tags</h4>
 <ul class="list-of-tags tags-in-article">
-<li><a href="https://kernelnote.com/tags.html#interrut-remapping-ref">interrut remapping
+<li><a href="./tags.html#interrut-remapping-ref">interrut remapping
                     <span>1</span>
 </a></li>
-<li><a href="https://kernelnote.com/tags.html#iommu-ref">iommu
+<li><a href="./tags.html#iommu-ref">iommu
                     <span>5</span>
 </a></li>
 </ul>
