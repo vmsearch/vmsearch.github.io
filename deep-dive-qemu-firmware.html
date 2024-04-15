@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+
+<html lang="zh_cn">
+<head>
+<meta charset="utf-8"/>
+<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="duma" name="author">
+<meta content="article" property="og:type">
+<meta content="summary" name="twitter:card"/>
+<meta content="qemu, firmware, articles, " name="keywords">
+<meta content="qemu当中firmware的具体实现解析 " property="og:title">
+<meta content="./deep-dive-qemu-firmware.html" property="og:url"/>
+<meta content="前言 firmware可以理解为服务器上一类专用软件，它的主功能是对相关设备提供更加底层的控制。常见的firmware比如服务器上要使用的bios等，另外，网卡和vga等设备都需要使用自己固有的fw。在这篇文章当中，笔者打算结合i440fx machine 平台 …" property="og:description"/>
+<meta content="kernelnote" property="og:site_name"/>
+<meta content="duma" property="og:article:author"/>
+<meta content="2022-09-25T00:00:00+08:00" property="og:article:published_time"/>
+<meta content="qemu当中firmware的具体实现解析 " name="twitter:title"/>
+<meta content="前言 firmware可以理解为服务器上一类专用软件，它的主功能是对相关设备提供更加底层的控制。常见的firmware比如服务器上要使用的bios等，另外，网卡和vga等设备都需要使用自己固有的fw。在这篇文章当中，笔者打算结合i440fx machine 平台 …" name="twitter:description"/>
+<title>qemu当中firmware的具体实现解析  · kernelnote
+</title>
+<link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet"/>
+<link href="./theme/css/elegant.prod.css" media="screen" rel="stylesheet" type="text/css"/>
+<link href="./theme/css/custom.css" media="screen" rel="stylesheet" type="text/css"/>
+<link href="https://kernelnote.com/feeds/all.atom.xml" rel="alternate" title="kernelnote - Full Atom Feed" type="application/atom+xml">
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LRRMJ08SPD');
+</script>
+</link></meta></meta></meta></meta><link href="https://kernelnote.com/deep-dive-qemu-firmware.html" rel="canonical"/><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "kernelnote", "item": "https://kernelnote.com"}, {"@type": "ListItem", "position": 2, "name": "Deep dive qemu firmware", "item": "https://kernelnote.com/deep-dive-qemu-firmware.html"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "author": {"@type": "Person", "name": "duma"}, "publisher": {"@type": "Organization", "name": "kernelnote"}, "headline": "qemu当中firmware的具体实现解析", "about": "articles", "datePublished": "2022-09-25 00:00"}</script></head>
+<body>
+<div id="content">
+<div class="navbar navbar-static-top">
+<div class="navbar-inner">
+<div class="container-fluid">
+<a class="btn btn-navbar" data-target=".nav-collapse" data-toggle="collapse">
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+</a>
+<a class="brand" href="./"><span class="site-name">kernelnote</span></a>
+<div class="nav-collapse collapse">
+<ul class="nav pull-right top-menu">
+<li>
+<a href=".">Home</a>
+</li>
+<li><a href="./pages/about.html">about</a></li>
+<li><a href="./categories.html">Categories</a></li>
+<li><a href="./tags.html">Tags</a></li>
+<li><a href="./archives.html">Archives</a></li>
+<li><form action="./search.html" class="navbar-search" onsubmit="return validateForm(this.elements['q'].value);"> <input class="search-query" id="tipue_search_input" name="q" placeholder="Search" type="text"/></form></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="container-fluid">
+<div class="row-fluid">
+<div class="span1"></div>
+<div class="span10">
+<article itemscope="">
+<div class="row-fluid">
+<header class="page-header span10 offset2">
+<h1>
+<a href="./deep-dive-qemu-firmware.html">
+                qemu当中firmware的具体实现解析
+            </a>
+</h1>
+</header>
+</div>
+<div class="row-fluid">
+<div class="span8 offset2 article-content">
+<h4>前言</h4>
+<p>firmware可以理解为服务器上一类专用软件，它的主功能是对相关设备提供更加底层的控制。常见的firmware比如服务器上要使用的bios等，另外，网卡和vga等设备都需要使用自己固有的fw。在这篇文章当中，笔者打算结合i440fx machine 平台从以下三个方面给大家讲一下firmware的使能和数据访问机制：
+- bios 加载流程
+- bios对相关数据访问机制的实现
+- 相关设备firmware处理</p>
+<h4>BIOS加载</h4>
+<p>firwmare通常是要被加载到指定的ROM里面的，我们先来看一下在qemu当中这一块是如何实现的。具体的逻辑在<code>pc_system_firmware_init</code> 这个函数里面，这个函数会在i440fx machine的 <code>pc_init1</code> 中调用，相关调用流程如下：</p>
+<div class="highlight"><pre><span></span><code><span class="n">pc_init1</span><span class="o">-&gt;</span><span class="n">pc_memory_init</span><span class="o">-&gt;</span><span class="n">pc_system_firmware_init</span>
+</code></pre></div>
+<p>接下来我们看一下<code>pc_system_firmware_init</code> 具体实现，其核心逻辑会随着vm的启动方式不同而不同。</p>
+<ul>
+<li>如果走的是legacy的模式即通过使用seabios来启动，则会走到<code>x86_bios_rom_init</code> 这个函数。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nb nb-Type">void</span><span class="w"> </span><span class="n">x86_bios_rom_init</span><span class="p">(</span><span class="n">MemoryRegion</span><span class="w"> </span><span class="o">*</span><span class="n">rom_memory</span><span class="p">,</span><span class="w"> </span><span class="nb nb-Type">bool</span><span class="w"> </span><span class="n">isapc_ram_fw</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="nb">char</span><span class="w"> </span><span class="o">*</span><span class="n">filename</span><span class="p">;</span>
+<span class="w">    </span><span class="n">MemoryRegion</span><span class="w"> </span><span class="o">*</span><span class="n">bios</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="n">isa_bios</span><span class="p">;</span>
+<span class="w">    </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">bios_size</span><span class="p">,</span><span class="w"> </span><span class="n">isa_bios_size</span><span class="p">;</span>
+<span class="w">    </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">ret</span><span class="p">;</span>
+
+<span class="w">    </span><span class="o">/*</span><span class="w"> </span><span class="n">BIOS</span><span class="w"> </span><span class="nb">load</span><span class="w"> </span><span class="o">*/</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">bios_name</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">bios_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BIOS_FILENAME</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">filename</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">qemu_find_file</span><span class="p">(</span><span class="n">QEMU_FILE_TYPE_BIOS</span><span class="p">,</span><span class="w"> </span><span class="n">bios_name</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">filename</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">bios_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">get_image_size</span><span class="p">(</span><span class="n">filename</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">bios_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">bios_size</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="o">||</span>
+<span class="w">        </span><span class="p">(</span><span class="n">bios_size</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="mi">65536</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">goto</span><span class="w"> </span><span class="n">bios_error</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">bios</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">g_malloc</span><span class="p">(</span><span class="n">sizeof</span><span class="p">(</span><span class="o">*</span><span class="n">bios</span><span class="p">));</span>
+<span class="w">    </span><span class="n">memory_region_init_ram</span><span class="p">(</span><span class="n">bios</span><span class="p">,</span><span class="w"> </span><span class="n">NULL</span><span class="p">,</span><span class="w"> </span><span class="s2">"pc.bios"</span><span class="p">,</span><span class="w"> </span><span class="n">bios_size</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">error_fatal</span><span class="p">);</span>
+
+<span class="w">    </span><span class="o">.......</span>
+
+<span class="w">    </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rom_add_file_fixed</span><span class="p">(</span><span class="n">bios_name</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">uint32_t</span><span class="p">)(</span><span class="o">-</span><span class="n">bios_size</span><span class="p">),</span><span class="w"> </span><span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+
+<span class="w">    </span><span class="o">.</span><span class="w"> </span><span class="o">......</span>
+
+<span class="w">    </span><span class="o">/*</span><span class="w"> </span><span class="n">map</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">last</span><span class="w"> </span><span class="mi">128</span><span class="n">KB</span><span class="w"> </span><span class="n">of</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">BIOS</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">ISA</span><span class="w"> </span><span class="n">space</span><span class="w"> </span><span class="o">*/</span>
+<span class="w">    </span><span class="n">isa_bios_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MIN</span><span class="p">(</span><span class="n">bios_size</span><span class="p">,</span><span class="w"> </span><span class="mi">128</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">KiB</span><span class="p">);</span>
+<span class="w">    </span><span class="n">isa_bios</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">g_malloc</span><span class="p">(</span><span class="n">sizeof</span><span class="p">(</span><span class="o">*</span><span class="n">isa_bios</span><span class="p">));</span>
+<span class="w">    </span><span class="n">memory_region_init_alias</span><span class="p">(</span><span class="n">isa_bios</span><span class="p">,</span><span class="w"> </span><span class="n">NULL</span><span class="p">,</span><span class="w"> </span><span class="s2">"isa-bios"</span><span class="p">,</span><span class="w"> </span><span class="n">bios</span><span class="p">,</span>
+<span class="w">                             </span><span class="n">bios_size</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">isa_bios_size</span><span class="p">,</span><span class="w"> </span><span class="n">isa_bios_size</span><span class="p">);</span>
+<span class="w">    </span><span class="n">memory_region_add_subregion_overlap</span><span class="p">(</span><span class="n">rom_memory</span><span class="p">,</span>
+<span class="w">                                        </span><span class="mh">0x100000</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">isa_bios_size</span><span class="p">,</span>
+<span class="w">                                        </span><span class="n">isa_bios</span><span class="p">,</span>
+<span class="w">                                        </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">   </span><span class="o">.......</span>
+
+<span class="w">    </span><span class="o">/*</span><span class="w"> </span><span class="n">map</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">bios</span><span class="w"> </span><span class="n">at</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">top</span><span class="w"> </span><span class="n">of</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">*/</span>
+<span class="w">    </span><span class="n">memory_region_add_subregion</span><span class="p">(</span><span class="n">rom_memory</span><span class="p">,</span>
+<span class="w">                                </span><span class="p">(</span><span class="n">uint32_t</span><span class="p">)(</span><span class="o">-</span><span class="n">bios_size</span><span class="p">),</span>
+<span class="w">                                </span><span class="n">bios</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>核心实现如上所示，这个函数里面主要干如下几件事：</p>
+<ul>
+<li>找到名字为<code>bios.bin</code> 的文件，获取其大小然后通过<code>rom_add_file_fixed</code> 去加载<code>bios.bin</code> 的数据。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="n">rom_add_file_fixed</span><span class="o">-&gt;</span><span class="n">rom_add_file</span>
+</code></pre></div>
+<p><strong><code>rom_add_file</code> 将bios.bin的数据读到<code>rom-&gt;data</code> 所指向的内存里面，并将<code>rom-&gt;addr</code> 赋值为<code>4G - bios.size</code>，然后通过<code>rom_insert</code> 将这个<code>rom</code> 放到全局<code>roms</code> list里面</strong>。</p>
+<ul>
+<li>另外一件核心的事情就是通过<code>memory_region_init_ram</code> 创建一个大小为<code>bios_size</code> 名为<code>pc.bios</code> 的<code>ram</code>，同时通过alias的方式创建一个大小为128KB的isa-bios subregion，<strong>这样做的目的是为了将<code>bios</code> 最后的128KB的内容map到起始地址为<code>0xe0000</code> 的内存当中，最后将<code>bios memregion</code>添加为<code>rom_memory</code> 的<code>subregion</code>，addr为<code>4G - bios_size</code></strong>。</li>
+</ul>
+<p><strong>从上面来看，<code>pc.bios</code> 的内存空间和真实的<code>rom file</code> 并没有关联起来，那这两者到底是在什么时候产生关联的呢？别着急后面会详细道来</strong>。</p>
+<ul>
+<li>如果vm是通过uefi的方式来启动的话，则bios加载的核心逻辑在<code>pc_system_flash_map</code> 这个函数。再介绍这个函数之前，我们先介绍一下关于flash的背景知识。首先，我们看一下如果vm要通过uefi的方式启动则qemu侧的相关配置是怎么样的？具体如下：</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="o">-</span><span class="n">drive</span><span class="w"> </span><span class="n">file</span><span class="o">=/</span><span class="n">usr</span><span class="o">/</span><span class="n">share</span><span class="o">/</span><span class="n">OVMF</span><span class="o">/</span><span class="n">OVMF_CODE</span><span class="o">.</span><span class="n">fd</span><span class="p">,</span><span class="k">if</span><span class="o">=</span><span class="n">pflash</span><span class="p">,</span><span class="n">format</span><span class="o">=</span><span class="n">raw</span><span class="p">,</span><span class="n">unit</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">readonly</span><span class="o">=</span><span class="n">on</span><span class="w"> </span>
+<span class="o">-</span><span class="n">drive</span><span class="w"> </span><span class="n">file</span><span class="o">=/</span><span class="k">var</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">volcstack</span><span class="o">/</span><span class="n">nvram</span><span class="o">/</span><span class="n">OVMF_VARS</span><span class="o">.</span><span class="n">fd</span><span class="p">,</span><span class="k">if</span><span class="o">=</span><span class="n">pflash</span><span class="p">,</span><span class="n">format</span><span class="o">=</span><span class="n">raw</span><span class="p">,</span><span class="n">unit</span><span class="o">=</span><span class="mi">1</span>
+</code></pre></div>
+<p>从上面的qemu cmd来看，uefi bios的加载是通过qemu当中类型为pflash的block drive来加载的，而且其包含了两部分：<strong>一部分为ovmf code即uefi bios 真实要运行的代码， 另一部分为ovmf vars即运行的时候需要的一些变量</strong>。至于这个drive如何被初始化，由于这个不是本篇文章的重点所以这里就不详细介绍了。下面我们来重点介绍一下存储uefi bios 的flash是如何被创建的。首先，我们来看一下<code>flash</code> 的创建流程相关调用关系</p>
+<div class="highlight"><pre><span></span><code><span class="n">pc_machine_initfn</span><span class="o">-&gt;</span><span class="n">pc_system_flash_create</span><span class="o">-&gt;</span><span class="n">pc_pflash_create</span><span class="o">-&gt;</span><span class="n">qdev_new</span><span class="p">(</span><span class="n">TYPE_PFLASH_CFI01</span><span class="p">)</span>
+</code></pre></div>
+<p>上面的核心逻辑就是在<code>realiezed</code> 之前，先把dev给创建出来。接着再回到<code>pc_system_firmware_init</code> 这个函数涉及到相关的逻辑如下</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">ARRAY_SIZE</span><span class="p">(</span><span class="n">pcms</span><span class="o">-&gt;</span><span class="n">flash</span><span class="p">);</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">        </span><span class="o">//</span><span class="n">将flash跟系统当中type为IF_PFLASH的drive关联起来</span>
+<span class="w">        </span><span class="n">pflash_cfi01_legacy_drive</span><span class="p">(</span><span class="n">pcms</span><span class="o">-&gt;</span><span class="n">flash</span><span class="o">[</span><span class="n">i</span><span class="o">]</span><span class="p">,</span>
+<span class="w">                                  </span><span class="n">drive_get</span><span class="p">(</span><span class="n">IF_PFLASH</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="p">));</span>
+<span class="w">        </span><span class="o">//</span><span class="n">获取相应的后端block</span><span class="w"> </span><span class="n">backend</span><span class="err">，</span><span class="n">这里就是raw格式的file</span>
+<span class="w">        </span><span class="n">pflash_blk</span><span class="o">[</span><span class="n">i</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pflash_cfi01_get_blk</span><span class="p">(</span><span class="n">pcms</span><span class="o">-&gt;</span><span class="n">flash</span><span class="o">[</span><span class="n">i</span><span class="o">]</span><span class="p">);</span>
+<span class="w">    </span><span class="err">}</span>
+</code></pre></div>
+<p>具体逻辑见注释，下面我们还是接着看<code>pc_system_flash_map</code> ，其核心实现逻辑如下</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">ARRAY_SIZE</span><span class="p">(</span><span class="n">pcms</span><span class="o">-&gt;</span><span class="n">flash</span><span class="p">);</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">        </span><span class="n">system_flash</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pcms</span><span class="o">-&gt;</span><span class="n">flash</span><span class="o">[</span><span class="n">i</span><span class="o">]</span><span class="p">;</span>
+<span class="w">        </span><span class="n">blk</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pflash_cfi01_get_blk</span><span class="p">(</span><span class="n">system_flash</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="err">!</span><span class="n">blk</span><span class="p">)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">            </span><span class="k">break</span><span class="p">;</span>
+<span class="w">        </span><span class="err">}</span>
+<span class="w">        </span><span class="k">size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">blk_getlength</span><span class="p">(</span><span class="n">blk</span><span class="p">);</span>
+
+<span class="w">        </span><span class="p">.........</span>
+
+<span class="w">        </span><span class="n">total_size</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="k">size</span><span class="p">;</span>
+<span class="w">        </span><span class="n">qdev_prop_set_uint32</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">(</span><span class="n">system_flash</span><span class="p">),</span><span class="w"> </span><span class="ss">"num-blocks"</span><span class="p">,</span>
+<span class="w">                             </span><span class="k">size</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">FLASH_SECTOR_SIZE</span><span class="p">);</span>
+<span class="w">        </span><span class="o">//</span><span class="n">调用realized</span><span class="w"> </span><span class="n">函数</span><span class="err">，</span><span class="n">对flash进行初始化</span><span class="w"> </span>
+<span class="w">        </span><span class="n">sysbus_realize_and_unref</span><span class="p">(</span><span class="n">SYS_BUS_DEVICE</span><span class="p">(</span><span class="n">system_flash</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="n">error_fatal</span><span class="p">);</span>
+<span class="w">        </span><span class="n">sysbus_mmio_map</span><span class="p">(</span><span class="n">SYS_BUS_DEVICE</span><span class="p">(</span><span class="n">system_flash</span><span class="p">),</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">                        </span><span class="mh">0x100000000</span><span class="n">ULL</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">total_size</span><span class="p">);</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">            </span><span class="n">flash_mem</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pflash_cfi01_get_memory</span><span class="p">(</span><span class="n">system_flash</span><span class="p">);</span>
+<span class="w">            </span><span class="n">pc_isa_bios_init</span><span class="p">(</span><span class="n">rom_memory</span><span class="p">,</span><span class="w"> </span><span class="n">flash_mem</span><span class="p">,</span><span class="w"> </span><span class="k">size</span><span class="p">);</span>
+
+<span class="w">            </span><span class="cm">/* Encrypt the pflash boot ROM */</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">kvm_memcrypt_enabled</span><span class="p">())</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="n">flash_ptr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">memory_region_get_ram_ptr</span><span class="p">(</span><span class="n">flash_mem</span><span class="p">);</span>
+<span class="w">                </span><span class="n">flash_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">memory_region_size</span><span class="p">(</span><span class="n">flash_mem</span><span class="p">);</span>
+<span class="w">                </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">kvm_memcrypt_encrypt_data</span><span class="p">(</span><span class="n">flash_ptr</span><span class="p">,</span><span class="w"> </span><span class="n">flash_size</span><span class="p">);</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="p">)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                    </span><span class="n">error_report</span><span class="p">(</span><span class="ss">"failed to encrypt pflash rom"</span><span class="p">);</span>
+<span class="w">                    </span><span class="k">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+<span class="w">                </span><span class="err">}</span>
+<span class="w">            </span><span class="err">}</span>
+<span class="w">        </span><span class="err">}</span>
+<span class="w">    </span><span class="err">}</span>
+</code></pre></div>
+<p>结合上面的代码，我们来仔细理一下相关实现：</p>
+<ul>
+<li>首先，对flash进行<code>realized</code> ，具体调用逻辑如下</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="n">sysbus_realize_and_unref</span><span class="o">-&gt;</span><span class="n">pflash_cfi01_realize</span>
+</code></pre></div>
+<p>最终实现在<code>pflash_cfi01_realize</code> 这个函数，节选核心逻辑如下</p>
+<div class="highlight"><pre><span></span><code><span class="n">static</span><span class="w"> </span><span class="k">void</span><span class="w"> </span><span class="n">pflash_cfi01_realize</span><span class="p">(</span><span class="n">DeviceState</span><span class="w"> </span><span class="o">*</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="o">**</span><span class="n">errp</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">ERRP_GUARD</span><span class="p">();</span>
+<span class="w">    </span><span class="n">PFlashCFI01</span><span class="w"> </span><span class="o">*</span><span class="n">pfl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PFLASH_CFI01</span><span class="p">(</span><span class="n">dev</span><span class="p">);</span>
+<span class="w">    </span><span class="n">uint64_t</span><span class="w"> </span><span class="n">total_len</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">ret</span><span class="p">;</span>
+<span class="w">    </span><span class="p">......</span>
+
+<span class="w">    </span><span class="n">total_len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">sector_len</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">nb_blocs</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">memory_region_init_rom_device</span><span class="p">(</span>
+<span class="w">        </span><span class="o">&amp;</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">mem</span><span class="p">,</span><span class="w"> </span><span class="n">OBJECT</span><span class="p">(</span><span class="n">dev</span><span class="p">),</span>
+<span class="w">        </span><span class="o">&amp;</span><span class="n">pflash_cfi01_ops</span><span class="p">,</span>
+<span class="w">        </span><span class="n">pfl</span><span class="p">,</span>
+<span class="w">        </span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">total_len</span><span class="p">,</span><span class="w"> </span><span class="n">errp</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">errp</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">storage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">memory_region_get_ram_ptr</span><span class="p">(</span><span class="o">&amp;</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">mem</span><span class="p">);</span>
+<span class="w">    </span><span class="n">sysbus_init_mmio</span><span class="p">(</span><span class="n">SYS_BUS_DEVICE</span><span class="p">(</span><span class="n">dev</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">mem</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">blk</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">uint64_t</span><span class="w"> </span><span class="n">perm</span><span class="p">;</span>
+<span class="w">        </span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">ro</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">!</span><span class="n">blk_supports_write_perm</span><span class="p">(</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">blk</span><span class="p">);</span>
+<span class="w">        </span><span class="n">perm</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BLK_PERM_CONSISTENT_READ</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="p">(</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">ro</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="mh">0</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">BLK_PERM_WRITE</span><span class="p">);</span>
+<span class="w">        </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">blk_set_perm</span><span class="p">(</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">blk</span><span class="p">,</span><span class="w"> </span><span class="n">perm</span><span class="p">,</span><span class="w"> </span><span class="n">BLK_PERM_ALL</span><span class="p">,</span><span class="w"> </span><span class="n">errp</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mh">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">ro</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">false</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">blk</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">blk_check_size_and_read_all</span><span class="p">(</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">blk</span><span class="p">,</span><span class="w"> </span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">storage</span><span class="p">,</span><span class="w"> </span><span class="n">total_len</span><span class="p">,</span>
+<span class="w">                                         </span><span class="n">errp</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">vmstate_unregister_ram</span><span class="p">(</span><span class="o">&amp;</span><span class="n">pfl</span><span class="o">-&gt;</span><span class="n">mem</span><span class="p">,</span><span class="w"> </span><span class="n">DEVICE</span><span class="p">(</span><span class="n">pfl</span><span class="p">));</span>
+<span class="w">            </span><span class="k">return</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="p">......</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>结合上面的代码，我们分析一下具体的实现：</p>
+<p>1) <code>memory_region_init_rom_device</code> 初始化一段rom的内存，并绑定相应的<code>mem ops</code>。qemu当中<code>rom</code> 内存都是只读的且作为一段ram map到guest内存空间。对这段内存的读就直接走普通的内存读写的方式，写的话因为这段内存是<code>read only</code> 所以会trap到qemu然后执行该段内存绑定的ops所对应的<code>write</code></p>
+<p>2) <code>sysbus_init_mmio</code> 初始化<code>flash</code> 设备对应的mmio空间。</p>
+<p>3) 将数据从磁盘读到flash所对应的内存当中。</p>
+<ul>
+<li>
+<p>接着调用 <code>sysbus_mmio_map</code> 对上面mmio空间进行映射，起始地址为<code>4G - file.size</code></p>
+</li>
+<li>
+<p>最后调用<code>pc_isa_bios_init</code> 将 uefi bios最后128KB映射到isa space，具体做法跟leacy模式一样这里就不细讲了。</p>
+</li>
+</ul>
+<h4>BIOS对相关数据访问</h4>
+<p>上面聊完了bios的加载，下面我们来聊聊qemu当中BIOS对相关数据访问实现。为了BIOS更加方便的访问相关的数据比如cpu个数，ACPI表，mem等信息qemu里面引入了<code>fw_cfg</code> 机制。简单的来说fw_cfg当中定义了一系列的key和value，然后bios通过port io来进行相关的访问。下面我们来看一下相关实现，具体函数为<code>fw_cfg_arch_create</code> ，在其实现当中主要做了下面几个事情：</p>
+<ul>
+<li>调用<code>fw_cfg_init_io_dma</code> 创建<code>TYPE_FW_CFG_IO</code> 设备和绑定相关<code>port io</code>。其中<code>iobase 为0x511, dma_iobase 为0x515</code></li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nx">FWCfgState</span><span class="w"> </span><span class="o">*</span><span class="nx">fw_cfg_init_io_dma</span><span class="p">(</span><span class="nx">uint32_t</span><span class="w"> </span><span class="nx">iobase</span><span class="p">,</span><span class="w"> </span><span class="nx">uint32_t</span><span class="w"> </span><span class="nx">dma_iobase</span><span class="p">,</span>
+<span class="w">                                </span><span class="nx">AddressSpace</span><span class="w"> </span><span class="o">*</span><span class="nx">dma_as</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="nx">DeviceState</span><span class="w"> </span><span class="o">*</span><span class="nx">dev</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">SysBusDevice</span><span class="w"> </span><span class="o">*</span><span class="nx">sbd</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">FWCfgIoState</span><span class="w"> </span><span class="o">*</span><span class="nx">ios</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">FWCfgState</span><span class="w"> </span><span class="o">*</span><span class="nx">s</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="nx">dma_requested</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">dma_iobase</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">dma_as</span><span class="p">;</span>
+<span class="w">    </span><span class="c1">//创建TYPE_FW_CFG_IO设备</span>
+<span class="w">    </span><span class="nx">dev</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">qdev_new</span><span class="p">(</span><span class="nx">TYPE_FW_CFG_IO</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(!</span><span class="nx">dma_requested</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">qdev_prop_set_bit</span><span class="p">(</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="s">"dma_enabled"</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nx">object_property_add_child</span><span class="p">(</span><span class="nx">OBJECT</span><span class="p">(</span><span class="nx">qdev_get_machine</span><span class="p">()),</span><span class="w"> </span><span class="nx">TYPE_FW_CFG</span><span class="p">,</span>
+<span class="w">                              </span><span class="nx">OBJECT</span><span class="p">(</span><span class="nx">dev</span><span class="p">));</span>
+
+<span class="w">    </span><span class="nx">sbd</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">SYS_BUS_DEVICE</span><span class="p">(</span><span class="nx">dev</span><span class="p">);</span>
+<span class="w">    </span><span class="c1">//调用dev的realized函数</span>
+<span class="w">    </span><span class="nx">sysbus_realize_and_unref</span><span class="p">(</span><span class="nx">sbd</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">error_fatal</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">ios</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">FW_CFG_IO</span><span class="p">(</span><span class="nx">dev</span><span class="p">);</span>
+<span class="w">    </span><span class="c1">//将com_iomem与iobase绑定</span>
+<span class="w">    </span><span class="nx">sysbus_add_io</span><span class="p">(</span><span class="nx">sbd</span><span class="p">,</span><span class="w"> </span><span class="nx">iobase</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">ios</span><span class="o">-&gt;</span><span class="nx">comb_iomem</span><span class="p">);</span>
+
+<span class="w">    </span><span class="nx">s</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">FW_CFG</span><span class="p">(</span><span class="nx">dev</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">s</span><span class="o">-&gt;</span><span class="nx">dma_enabled</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="cm">/* 64 bits for the address field */</span>
+<span class="w">        </span><span class="nx">s</span><span class="o">-&gt;</span><span class="nx">dma_as</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">dma_as</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">s</span><span class="o">-&gt;</span><span class="nx">dma_addr</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="w">        </span><span class="c1">//将dam_iomem与dma_iobase绑定</span>
+<span class="w">        </span><span class="nx">sysbus_add_io</span><span class="p">(</span><span class="nx">sbd</span><span class="p">,</span><span class="w"> </span><span class="nx">dma_iobase</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">s</span><span class="o">-&gt;</span><span class="nx">dma_iomem</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">s</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>相关逻辑如上，这里重点讲一下<code>sysbus_realize_and_unref</code> ，它最终调用的函数为<code>fw_cfg_io_realize</code>，其核心逻辑如下</p>
+<div class="highlight"><pre><span></span><code><span class="nx">static</span><span class="w"> </span><span class="nx">void</span><span class="w"> </span><span class="nx">fw_cfg_io_realize</span><span class="p">(</span><span class="nx">DeviceState</span><span class="w"> </span><span class="o">*</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">Error</span><span class="w"> </span><span class="o">**</span><span class="nx">errp</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="nx">ERRP_GUARD</span><span class="p">();</span>
+<span class="w">    </span><span class="nx">FWCfgIoState</span><span class="w"> </span><span class="o">*</span><span class="nx">s</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">FW_CFG_IO</span><span class="p">(</span><span class="nx">dev</span><span class="p">);</span>
+
+<span class="w">    </span><span class="nx">fw_cfg_file_slots_allocate</span><span class="p">(</span><span class="nx">FW_CFG</span><span class="p">(</span><span class="nx">s</span><span class="p">),</span><span class="w"> </span><span class="nx">errp</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">errp</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="cm">/* when using port i/o, the 8-bit data register ALWAYS overlaps</span>
+<span class="cm">     * with half of the 16-bit control register. Hence, the total size</span>
+<span class="cm">     * of the i/o region used is FW_CFG_CTL_SIZE */</span>
+<span class="w">    </span><span class="nx">memory_region_init_io</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">s</span><span class="o">-&gt;</span><span class="nx">comb_iomem</span><span class="p">,</span><span class="w"> </span><span class="nx">OBJECT</span><span class="p">(</span><span class="nx">s</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">fw_cfg_comb_mem_ops</span><span class="p">,</span>
+<span class="w">                          </span><span class="nx">FW_CFG</span><span class="p">(</span><span class="nx">s</span><span class="p">),</span><span class="w"> </span><span class="s">"fwcfg"</span><span class="p">,</span><span class="w"> </span><span class="nx">FW_CFG_CTL_SIZE</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">FW_CFG</span><span class="p">(</span><span class="nx">s</span><span class="p">)</span><span class="o">-&gt;</span><span class="nx">dma_enabled</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">memory_region_init_io</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">FW_CFG</span><span class="p">(</span><span class="nx">s</span><span class="p">)</span><span class="o">-&gt;</span><span class="nx">dma_iomem</span><span class="p">,</span><span class="w"> </span><span class="nx">OBJECT</span><span class="p">(</span><span class="nx">s</span><span class="p">),</span>
+<span class="w">                              </span><span class="o">&amp;</span><span class="nx">fw_cfg_dma_mem_ops</span><span class="p">,</span><span class="w"> </span><span class="nx">FW_CFG</span><span class="p">(</span><span class="nx">s</span><span class="p">),</span><span class="w"> </span><span class="s">"fwcfg.dma"</span><span class="p">,</span>
+<span class="w">                              </span><span class="nx">sizeof</span><span class="p">(</span><span class="nx">dma_addr_t</span><span class="p">));</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nx">fw_cfg_common_realize</span><span class="p">(</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">errp</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>1) 调用<code>memory_region_init_io</code> 对<code>comb_iomem</code> 和<code>dma_iomem</code> 相关联的<code>mem_ops</code> 进行初始化</p>
+<p>2) 调用<code>fw_cfg_common_realize</code> 对<code>fw_cfg</code> 通用部分进行初始化，比如<code>FW_CFG_UUID</code> ，<code>FW_CFG_ID</code>，<code>FW_CFG_BOOT_MENU</code> 等。另外就是设置<code>fw_cfg_machine_ready</code> call back。</p>
+<p>回到<code>fw_cfg_arch_create</code> 继续往下看，上面初始化完io之后开始调用<code>fw_cfg_add_xxx</code>的接口添加一些key和value。比较重要的有</p>
+<div class="highlight"><pre><span></span><code>FW_CFG_NB_CPUS FW_CFG_MAX_XPUS FW_CFG_ACPI_TABLES FW_CFG_E820_TABLE FW_CFG_NUMA
+</code></pre></div>
+<p>建议大家可以翻代码再仔细看一，这些信息在bios阶段需要读取的一些信息。</p>
+<h4>设备fw的处理</h4>
+<p>在qemu当中分为pci设备和非pci设备比如挂在isa bus上的isa device。我们先来看一下pci设备fw的加载，具体实现在<code>pci_add_option_rom</code>。<strong>通常pci设备有一个专门的rom bar，设备的fw会被加载到这个rom bar里面</strong>。核心逻辑节选如下</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="o">......</span>
+
+<span class="w">    </span><span class="o">//</span><span class="err">初始化一段</span><span class="n">rom内存</span>
+<span class="w">    </span><span class="n">memory_region_init_rom</span><span class="p">(</span><span class="o">&amp;</span><span class="n">pdev</span><span class="o">-&gt;</span><span class="n">rom</span><span class="p">,</span><span class="w"> </span><span class="n">OBJECT</span><span class="p">(</span><span class="n">pdev</span><span class="p">),</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">pdev</span><span class="o">-&gt;</span><span class="n">romsize</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">error_fatal</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ptr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">memory_region_get_ram_ptr</span><span class="p">(</span><span class="o">&amp;</span><span class="n">pdev</span><span class="o">-&gt;</span><span class="n">rom</span><span class="p">);</span>
+<span class="w">    </span><span class="o">//</span><span class="err">将</span><span class="n">romfile加载到上面分配的内存当中</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">load_image_size</span><span class="p">(</span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="n">ptr</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">)</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">error_setg</span><span class="p">(</span><span class="n">errp</span><span class="p">,</span><span class="w"> </span><span class="s2">"failed to load romfile </span><span class="se">\"</span><span class="si">%s</span><span class="se">\"</span><span class="s2">"</span><span class="p">,</span><span class="w"> </span><span class="n">pdev</span><span class="o">-&gt;</span><span class="n">romfile</span><span class="p">);</span>
+<span class="w">        </span><span class="n">g_free</span><span class="p">(</span><span class="n">path</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">g_free</span><span class="p">(</span><span class="n">path</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">is_default_rom</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="o">/*</span><span class="w"> </span><span class="n">Only</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">default</span><span class="w"> </span><span class="n">rom</span><span class="w"> </span><span class="n">images</span><span class="w"> </span><span class="n">will</span><span class="w"> </span><span class="n">be</span><span class="w"> </span><span class="n">patched</span><span class="w"> </span><span class="p">(</span><span class="k">if</span><span class="w"> </span><span class="n">needed</span><span class="p">)</span><span class="o">.</span><span class="w"> </span><span class="o">*/</span>
+<span class="w">        </span><span class="o">//</span><span class="err">对相关</span><span class="n">romfile信息进行确认</span>
+<span class="w">        </span><span class="n">pci_patch_ids</span><span class="p">(</span><span class="n">pdev</span><span class="p">,</span><span class="w"> </span><span class="n">ptr</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="o">//</span><span class="err">注册</span><span class="n">rom</span><span class="w"> </span><span class="n">bar</span><span class="w"> </span>
+<span class="w">    </span><span class="n">pci_register_bar</span><span class="p">(</span><span class="n">pdev</span><span class="p">,</span><span class="w"> </span><span class="n">PCI_ROM_SLOT</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">pdev</span><span class="o">-&gt;</span><span class="n">rom</span><span class="p">);</span>
+
+<span class="w">    </span><span class="o">......</span>
+</code></pre></div>
+<p>非要pci设备主要是通过<code>rom_add_vga</code> 和<code>rom_add_option</code> 这两个rom操作函数。他们最终调用的函数都是<code>rom_add_file</code> 上面也有介绍，这里面再重点描述一下他的逻辑。</p>
+<div class="highlight"><pre><span></span><code><span class="n">ssize_t</span><span class="w"> </span><span class="n">rom_add_file</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="nb">char</span><span class="w"> </span><span class="o">*</span><span class="n">file</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="nb">char</span><span class="w"> </span><span class="o">*</span><span class="n">fw_dir</span><span class="p">,</span>
+<span class="w">                     </span><span class="n">hwaddr</span><span class="w"> </span><span class="n">addr</span><span class="p">,</span><span class="w"> </span><span class="n">int32_t</span><span class="w"> </span><span class="n">bootindex</span><span class="p">,</span>
+<span class="w">                     </span><span class="nb nb-Type">bool</span><span class="w"> </span><span class="n">option_rom</span><span class="p">,</span><span class="w"> </span><span class="n">MemoryRegion</span><span class="w"> </span><span class="o">*</span><span class="n">mr</span><span class="p">,</span>
+<span class="w">                     </span><span class="n">AddressSpace</span><span class="w"> </span><span class="o">*</span><span class="k">as</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>首先会把<code>rom_file</code> 数据读到<code>rom-&gt;data</code> 里面，然后执行<code>rom_insert</code>。接下来如果fw_dir不为空则通过<code>fw_cfg_add_file</code> 将rom数据添加到<code>fw_cfg</code> 当中。反之，如果fw_dir为空但mr不空则将<code>mr</code>赋给<code>rom-&gt;mr</code>。注意这个时候<code>mr</code>跟<code>data</code> 还是没有关联起来，那到底是什么时候发生关联的呢？上面也有所提及，这里我们花点时间看一下这个问题。答案就是在<code>rom_reset</code> 的时候，我们先来看一下rom_reset核心逻辑</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nx">static</span><span class="w"> </span><span class="nx">void</span><span class="w"> </span><span class="nx">rom_reset</span><span class="p">(</span><span class="nx">void</span><span class="w"> </span><span class="o">*</span><span class="nx">unused</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="nx">Rom</span><span class="w"> </span><span class="o">*</span><span class="nx">rom</span><span class="p">;</span>
+
+<span class="w">    </span><span class="nx">QTAILQ_FOREACH</span><span class="p">(</span><span class="nx">rom</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">roms</span><span class="p">,</span><span class="w"> </span><span class="nx">next</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">fw_file</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">continue</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="cm">/*</span>
+<span class="cm">         * We don't need to fill in the RAM with ROM data because we'll fill</span>
+<span class="cm">         * the data in during the next incoming migration in all cases.  Note</span>
+<span class="cm">         * that some of those RAMs can actually be modified by the guest.</span>
+<span class="cm">         */</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">runstate_check</span><span class="p">(</span><span class="nx">RUN_STATE_INMIGRATE</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">data</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">isrom</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="cm">/*</span>
+<span class="cm">                 * Free it so that a rom_reset after migration doesn't</span>
+<span class="cm">                 * overwrite a potentially modified 'rom'.</span>
+<span class="cm">                 */</span>
+<span class="w">                </span><span class="nx">rom_free_data</span><span class="p">(</span><span class="nx">rom</span><span class="p">);</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">            </span><span class="k">continue</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">data</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">continue</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">mr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="c1">//如果已经指定了rom mr，则将数据copy到mr的内存区域</span>
+<span class="w">            </span><span class="nx">void</span><span class="w"> </span><span class="o">*</span><span class="nx">host</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">memory_region_get_ram_ptr</span><span class="p">(</span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">mr</span><span class="p">);</span>
+<span class="w">            </span><span class="nx">memcpy</span><span class="p">(</span><span class="nx">host</span><span class="p">,</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">data</span><span class="p">,</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">datasize</span><span class="p">);</span>
+<span class="w">            </span><span class="nx">memset</span><span class="p">(</span><span class="nx">host</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">datasize</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">romsize</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">datasize</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="c1">//通过地址找到相应的内存空间，比如上面的pc.bios</span>
+<span class="w">            </span><span class="nx">address_space_write_rom</span><span class="p">(</span><span class="nx">rom</span><span class="o">-&gt;</span><span class="k">as</span><span class="p">,</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="kd">addr</span><span class="p">,</span><span class="w"> </span><span class="nx">MEMTXATTRS_UNSPECIFIED</span><span class="p">,</span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">data</span><span class="p">,</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">datasize</span><span class="p">);</span>
+
+<span class="w">            </span><span class="nx">address_space_set</span><span class="p">(</span><span class="nx">rom</span><span class="o">-&gt;</span><span class="k">as</span><span class="p">,</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="kd">addr</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">datasize</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">                              </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">romsize</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nx">rom</span><span class="o">-&gt;</span><span class="nx">datasize</span><span class="p">,</span>
+<span class="w">                              </span><span class="nx">MEMTXATTRS_UNSPECIFIED</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="o">......</span><span class="p">..</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>其中<code>rom_reset</code> 调用流程为</p>
+<div class="highlight"><pre><span></span><code><span class="n">qemu_system_wakeup</span><span class="o">-&gt;</span><span class="n">qemu_device_reset</span><span class="o">-&gt;</span><span class="n">rom_reset</span>
+
+<span class="err">注：</span><span class="n">rom_reset为注册在reset</span><span class="w"> </span><span class="n">handler</span><span class="w"> </span><span class="n">list上的一个callback函数</span>
+</code></pre></div>
+<h4>总结</h4>
+<p>基于上面所讲我们来总结一下，首先bios会被加载到一段rom的内存当中，这段read only的内存会被map到guest内存空间。另外 ，为了让bios在启动的过程当中更好的去访问某些数据，qemu当中实现了fw_cfg机制。最后，设备相关的<code>rom file</code>的处理方式也分为两种：一种是pci设备会有专门的<code>rom bar</code>，另一种是非pci设备则可以加载到内存当中也可以通过<code>fw_cfg</code>来读取。</p>
+<hr/>
+</div>
+<section class="span2" id="article-sidebar">
+<h4>Published</h4>
+<time datetime="2022-09-25T00:00:00+08:00" itemprop="dateCreated"> 9 25, 2022</time>
+<h4>Category</h4>
+<a class="category-link" href="./categories.html#articles-ref">articles</a>
+<h4>Tags</h4>
+<ul class="list-of-tags tags-in-article">
+<li><a href="./tags.html#firmware-ref">firmware
+                    <span>1</span>
+</a></li>
+<li><a href="./tags.html#qemu-ref">qemu
+                    <span>2</span>
+</a></li>
+</ul>
+</section>
+</div>
+</article>
+</div>
+<div class="span1"></div>
+</div>
+</div>
+</div>
+<footer>
+<div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" rel="nofollow noopener noreferrer" target="_blank" title="Pelican Home Page">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" rel="nofollow noopener noreferrer" target="_blank" title="Theme Elegant Home Page">Elegant</a>
+</div>
+</footer> <script src="//code.jquery.com/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+<script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+<script>
+    (function () {
+        if (window.location.hash.match(/^#comment-\d+$/)) {
+            $('#comment_thread').collapse('show');
+        }
+    })();
+    window.onhashchange=function(){
+        if (window.location.hash.match(/^#comment-\d+$/))
+            window.location.reload(true);
+    }
+    $('#comment_thread').on('shown', function () {
+        var link = document.getElementById('comment-accordion-toggle');
+        var old_innerHTML = link.innerHTML;
+        $(link).fadeOut(200, function() {
+            $(this).text('Click here to hide comments').fadeIn(200);
+        });
+        $('#comment_thread').on('hidden', function () {
+            $(link).fadeOut(200, function() {
+                $(this).text(old_innerHTML).fadeIn(200);
+            });
+        })
+    })
+</script>
+</body>
+<!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>
