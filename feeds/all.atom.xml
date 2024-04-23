@@ -361,7 +361,107 @@
 &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
 
 &lt;h4&gt;总结&lt;/h4&gt;
-&lt;p&gt;基于上面所讲我们来总结一下，首先bios会被加载到一段rom的内存当中，这段read only的内存会被map到guest内存空间。另外 ，为了让bios在启动的过程当中更好的去访问某些数据，qemu当中实现了fw_cfg机制。最后，设备相关的&lt;code&gt;rom file&lt;/code&gt;的处理方式也分为两种：一种是pci设备会有专门的&lt;code&gt;rom bar&lt;/code&gt;，另一种是非pci设备则可以加载到内存当中也可以通过&lt;code&gt;fw_cfg&lt;/code&gt;来读取。&lt;/p&gt;</content><category term="articles"></category><category term="qemu"></category><category term="firmware"></category></entry><entry><title>深入解析qemu侧SRIOV实现</title><link href="https://kernelnote.com/deep-dive-sriov-in-qemu.html" rel="alternate"></link><published>2022-06-26T00:00:00+08:00</published><updated>2022-06-26T00:00:00+08:00</updated><author><name>duma</name></author><id>tag:kernelnote.com,2022-06-26:/deep-dive-sriov-in-qemu.html</id><summary type="html">&lt;h4&gt;序言&lt;/h4&gt;
+&lt;p&gt;基于上面所讲我们来总结一下，首先bios会被加载到一段rom的内存当中，这段read only的内存会被map到guest内存空间。另外 ，为了让bios在启动的过程当中更好的去访问某些数据，qemu当中实现了fw_cfg机制。最后，设备相关的&lt;code&gt;rom file&lt;/code&gt;的处理方式也分为两种：一种是pci设备会有专门的&lt;code&gt;rom bar&lt;/code&gt;，另一种是非pci设备则可以加载到内存当中也可以通过&lt;code&gt;fw_cfg&lt;/code&gt;来读取。&lt;/p&gt;</content><category term="articles"></category><category term="qemu"></category><category term="firmware"></category></entry><entry><title>初识cxl协议&amp;cxl device</title><link href="https://kernelnote.com/learn-about-cxl-protocol.html" rel="alternate"></link><published>2022-07-16T00:00:00+08:00</published><updated>2022-07-16T00:00:00+08:00</updated><author><name>duma</name></author><id>tag:kernelnote.com,2022-07-16:/learn-about-cxl-protocol.html</id><summary type="html">&lt;h4&gt;产生背景&lt;/h4&gt;
+&lt;p&gt;作为协议主要发起方，intel在2019年首次提出了cxl协议并联合国内外一众芯片和硬件公司组成了cxl联盟。在cxl协议之前，pcie作为节点设备之间常用的连接协议。cxl的提出主要是希望填补一下pcie在异构计算和分离式数据中心方面的不足。cxl的优势可以总结如下：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;提供高效的share mem pool的访问机制&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;cpu和第三方accelerators之间数据交互更加高效&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;cxl协议的低时延特性(ns级)让内存拉远成为可能。&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;与cxl对等的还有ccix和nvlink这两种高效互连协议，这里需要专门说一下 …&lt;/p&gt;</summary><content type="html">&lt;h4&gt;产生背景&lt;/h4&gt;
+&lt;p&gt;作为协议主要发起方，intel在2019年首次提出了cxl协议并联合国内外一众芯片和硬件公司组成了cxl联盟。在cxl协议之前，pcie作为节点设备之间常用的连接协议。cxl的提出主要是希望填补一下pcie在异构计算和分离式数据中心方面的不足。cxl的优势可以总结如下：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;提供高效的share mem pool的访问机制&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;cpu和第三方accelerators之间数据交互更加高效&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;cxl协议的低时延特性(ns级)让内存拉远成为可能。&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;与cxl对等的还有ccix和nvlink这两种高效互连协议，这里需要专门说一下nvlink。搞gpu的同学应该对它都不陌生，从时间点上来看nvlink在2016年就开始在nv的相关产当中开始使用了，今年nv又把它用在自家的arm cpu跟gpu之间的互连上。intel之所以提出自己的cxl协议，也主要是为了避免nv进一步蚕食自己的数据中心市场，要知道老黄野心远远不止gpu。不过intel在效率上也确实不如nv，否则也不至于到了SPR这一代才开始支持CXL。下面我们就来探索一下cxl协议和base在这些协议上的设备。&lt;/p&gt;
+&lt;h4&gt;cxl 三种协议&lt;/h4&gt;
+&lt;p&gt;cxl 协议base在pcie 5.0之上，其提出了三种协议分别如下：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;cxl.io
+其主要负责cxl设备的发现，设备初始化，bar和配置空间访问，中断以及dma、ATS。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;cxl.cache
+ 其重新定义了设备与host主存之间的交互方式。之所以说是重新定义，我们先来看一下在common pcie的场景下设备是如何跟host主存之间进行交互的，大体可以分为下面三个步骤：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;设备驱动通过dma map相关的api 将host主存映射到设备能访问的io空间。&lt;/li&gt;
+&lt;li&gt;host 通过写mmio告诉设备该段地址range和大小&lt;/li&gt;
+&lt;li&gt;设备触发dma操作将数据搬运到设备private mem(如网卡的SRAM)里面。
+而在cxl cache 协议模式下，设备是可以cache host的主存的，这种访问方式的时延更加低。如何理解这个cache host主存呢？cxl cache 主要是基于MESI(Modified, Exclusive, Shared, Invalid) cache一致性协议，然后通过request and respose这种工作模型来实现设备跟host之间的数据交互。具体来说，cxl cache硬件分别在每个方向上(host2device and device2host)定义三个channel：request，response，data。具体如下&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;img alt="cxl_cache_channel" src="images/cxl_cache_channel.png"&gt;
+&lt;center&gt; 图1 cxl.cache channels &lt;/center&gt;
+如上图所示，channel之间是相互独立的从而保证了数据高性能传输。另外，cxl cache在每个方向上还定义了相关操作的Opcode，大家如果感兴趣可以去看一下相关的spec。这里以device访问host memory为例展示一下相关的流程：&lt;/p&gt;
+&lt;p&gt;&lt;img alt="cxl_d2h" src="images/cxl_d2h.png"&gt;
+&lt;center&gt; 图2 cxl cache device access host memory&lt;/center&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;cxl.mem
+该协议实现了host memory和device memory的统一编址，host cpu能够通过load and store指令直接访问device memory也称之为host managed device memory。hdm底层的存储介质可以是dram也可以pmem。在cxl mem协议之下， cpu 侧的coherency engine作为Master，然后device attached memory作为Subordinate(下属)。Master作为请求的发出方如数据read，write等；而Subordinate作为请求的响应方。由master 发往 subordinate的交互简称为M2S，相反方向称之为S2M。每种交互都有两种不同的消息类型，先来看一下M2S&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;request without data(Req)&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;request with data(RwD)&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;接着看一下S2M的两类消息
+    - Reponse without data(NDR)&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;code&gt;- Repose with Data(RwD)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;交互定义的不同Opcodes，具体如下图所示：&lt;/p&gt;
+&lt;p&gt;&lt;img alt="cxl_mem_opcode" src="images/cxl_mem_opcode.png"&gt;
+&lt;center&gt;图3 M2S request memory Opcodes&lt;/center&gt;&lt;/p&gt;
+&lt;h4&gt;cxl三种设备类型&lt;/h4&gt;
+&lt;p&gt;讲完cxl三种协议实现，我们再来看一下cxl支持的三种不同类型设备。为了让大家有一个整体的认知，我们先上一张整体的架构图&lt;/p&gt;
+&lt;p&gt;&lt;img alt="cxl_device" src="images/cxl_device.png"&gt;
+&lt;center&gt; 图4 cxl device&lt;/center&gt;&lt;/p&gt;
+&lt;p&gt;结合着上面的图我们来来看一下这三种类型设备的异同点：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;type 1 device&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;从上图可以看到type 1 device 只支持cxl.io和cxl.cache这两种协议，通常用于需要经常访问host主存的一些设备比如网卡和硬件加速器等。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;type 2 device&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;type 2 device 支持 cxl.cache和cxl.mem，一般都会带有 device attached memory如HBM 或者DDR。这类设备使用的场景是host和device之间需要大量的进行内存访问和数据交互比如gpu等。跟传统pcie设备的device attached memory 区别在于，cxl.mem协议下的 device attached memory跟host 主存是统一编址的，host cpu 访问 type 2 device  attached memory跟访问host 主存没有区别。&lt;/p&gt;
+&lt;p&gt;&lt;img alt="cxl_type2_device" src="images/cxl_type2_device.png"&gt;
+&lt;center&gt; 图5 type 2 device with attached memory&lt;/center&gt;&lt;/p&gt;
+&lt;p&gt;结合上图的这张图我们来聊一下type 2 当中引入的Bias Based  coherency model，在这种model下。HDM可以有两种状态，分别是 Host Bias和Device Bias。当hdm设置为 Host Bias state时，如果设备要访问 HDM则需要先把request发到Host，再由Host完成相关的操作；当hdm 设置为 device Bias state时设备访问HDM时不需要往host发相关的request，前提是需要device保证host侧没有cache的旧数据。需要注意的是，不管是哪种Bias state对host侧来说这些hdm跟host attached memory 都是统一地址的。为了实现Bias model，需要type 2 device实现以下能力&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;code&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="err"&gt;实现&lt;/span&gt;&lt;span class="n"&gt;Bias&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;table来追踪Bias&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="err"&gt;中文可以译为偏差&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="err"&gt;，粒度需要细化到&lt;/span&gt;&lt;span class="n"&gt;page&lt;/span&gt;&lt;span class="err"&gt;。&lt;/span&gt;
+
+&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="err"&gt;支持使用&lt;/span&gt;&lt;span class="n"&gt;TA&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;translation&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;agent&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="err"&gt;来进行&lt;/span&gt;&lt;span class="n"&gt;Bias&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;translation&lt;/span&gt;&lt;span class="err"&gt;，从而能够比较方便的&lt;/span&gt;&lt;span class="n"&gt;flush&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;host侧的cache&lt;/span&gt;&lt;span class="err"&gt;。&lt;/span&gt;
+
+&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="err"&gt;支持通过&lt;/span&gt;&lt;span class="nb"&gt;load&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="ow"&gt;and&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;store指令去访问local的memory&lt;/span&gt;&lt;span class="err"&gt;。&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ul&gt;
+&lt;li&gt;type 3 device&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;该类型的设备只支持cxl.io 和cxl.mem，这种类型的设备一般作为host memory的扩展来使用，因此cache一致性主要是由cpu侧来保障。至于type 3设备跟host cpu进行交互相关机制会在后续的系列当中进行详细说明。另外，type3设备还支持Multi Logical Device(个人理解跟 pcie sriov 比较类似)，每个MLD可以再细出为16个独立的LD(logical device)，LD与LD之间通过LD-ID一个16bit的identifier来区分。&lt;/p&gt;
+&lt;h4&gt;总结&lt;/h4&gt;
+&lt;p&gt;上面介绍了cxl的协议和设备，cxl给后续的设备与host之间的低时延交互以及内存池化都带来了比较多的想象力。后续的文章，将会给大家讲一下cxl设备的发现和枚举流程。&lt;/p&gt;</content><category term="articles"></category><category term="cxl"></category><category term="cxl device"></category></entry><entry><title>深入解析qemu侧SRIOV实现</title><link href="https://kernelnote.com/deep-dive-sriov-in-qemu.html" rel="alternate"></link><published>2022-06-26T00:00:00+08:00</published><updated>2022-06-26T00:00:00+08:00</updated><author><name>duma</name></author><id>tag:kernelnote.com,2022-06-26:/deep-dive-sriov-in-qemu.html</id><summary type="html">&lt;h4&gt;序言&lt;/h4&gt;
 &lt;p&gt;sriov的技术大家基本上都能耳熟能详了，但是大多也只停留在spec层面或者说知道sriov如何使能上。这篇文章主要想通过qemu侧对sirov后端相关模拟的解析来让大家对sriov有一个更加深入的理解。后续的行文主要分为以下两个方面
 - os侧 sriov相关使能解析
 - qemu侧对sriov模拟&lt;/p&gt;

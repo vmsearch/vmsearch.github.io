@@ -5,35 +5,35 @@ xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
 <url>
 <loc>https://kernelnote.com/</loc>
-<lastmod>2024-04-15T08:18:27-00:00</lastmod>
+<lastmod>2024-04-23T20:40:25-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
 <loc>https://kernelnote.com/tags.html</loc>
-<lastmod>2024-04-15T08:18:27-00:00</lastmod>
+<lastmod>2024-04-23T20:40:25-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
 <loc>https://kernelnote.com/categories.html</loc>
-<lastmod>2024-04-15T08:18:27-00:00</lastmod>
+<lastmod>2024-04-23T20:40:25-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
 <loc>https://kernelnote.com/authors.html</loc>
-<lastmod>2024-04-15T08:18:27-00:00</lastmod>
+<lastmod>2024-04-23T20:40:25-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
 <loc>https://kernelnote.com/archives.html</loc>
-<lastmod>2024-04-15T08:18:27-00:00</lastmod>
+<lastmod>2024-04-23T20:40:25-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
@@ -48,6 +48,13 @@ xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
 <loc>https://kernelnote.com/deep-dive-qemu-firmware.html</loc>
 <lastmod>2022-09-25T00:00:00+08:00</lastmod>
+<changefreq>monthly</changefreq>
+<priority>0.7</priority>
+</url>
+
+<url>
+<loc>https://kernelnote.com/learn-about-cxl-protocol.html</loc>
+<lastmod>2022-07-16T00:00:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
@@ -153,6 +160,20 @@ xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
 <loc>https://kernelnote.com/tag/firmware.html</loc>
 <lastmod>2022-09-25T00:00:00+08:06</lastmod>
+<changefreq>daily</changefreq>
+<priority>0.5</priority>
+</url>
+
+<url>
+<loc>https://kernelnote.com/tag/cxl.html</loc>
+<lastmod>2022-07-16T00:00:00+08:06</lastmod>
+<changefreq>daily</changefreq>
+<priority>0.5</priority>
+</url>
+
+<url>
+<loc>https://kernelnote.com/tag/cxl-device.html</loc>
+<lastmod>2022-07-16T00:00:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
