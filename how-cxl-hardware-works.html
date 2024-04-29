@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+
+<html lang="zh_cn">
+<head>
+<meta charset="utf-8"/>
+<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="duma" name="author">
+<meta content="article" property="og:type">
+<meta content="summary" name="twitter:card"/>
+<meta content="cxl, cxl hardware, articles, " name="keywords">
+<meta content="cxl解析系列之cxl设备底层工作机制 " property="og:title">
+<meta content="./how-cxl-hardware-works.html" property="og:url"/>
+<meta content="序言 上一篇主要讲了一下cxl的三种协议和三种设备，这一篇主要讲一下cxl设备底层的一些基本工作原理。在cxl的拓扑结构当中可以有cxl host bridge，cxl root port， cxl switch和cxl endpoint这几种类型的设备，下面我们来具体看一下不同类型设备在硬件 …" property="og:description"/>
+<meta content="kernelnote" property="og:site_name"/>
+<meta content="duma" property="og:article:author"/>
+<meta content="2022-07-24T00:00:00+08:00" property="og:article:published_time"/>
+<meta content="cxl解析系列之cxl设备底层工作机制 " name="twitter:title"/>
+<meta content="序言 上一篇主要讲了一下cxl的三种协议和三种设备，这一篇主要讲一下cxl设备底层的一些基本工作原理。在cxl的拓扑结构当中可以有cxl host bridge，cxl root port， cxl switch和cxl endpoint这几种类型的设备，下面我们来具体看一下不同类型设备在硬件 …" name="twitter:description"/>
+<title>cxl解析系列之cxl设备底层工作机制  · kernelnote
+</title>
+<link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet"/>
+<link href="./theme/css/elegant.prod.css" media="screen" rel="stylesheet" type="text/css"/>
+<link href="./theme/css/custom.css" media="screen" rel="stylesheet" type="text/css"/>
+<link href="https://kernelnote.com/feeds/all.atom.xml" rel="alternate" title="kernelnote - Full Atom Feed" type="application/atom+xml">
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LRRMJ08SPD');
+</script>
+</link></meta></meta></meta></meta><link href="https://kernelnote.com/how-cxl-hardware-works.html" rel="canonical"/><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "kernelnote", "item": "https://kernelnote.com"}, {"@type": "ListItem", "position": 2, "name": "How cxl hardware works", "item": "https://kernelnote.com/how-cxl-hardware-works.html"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "author": {"@type": "Person", "name": "duma"}, "publisher": {"@type": "Organization", "name": "kernelnote"}, "headline": "cxl解析系列之cxl设备底层工作机制", "about": "articles", "datePublished": "2022-07-24 00:00"}</script></head>
+<body>
+<div id="content">
+<div class="navbar navbar-static-top">
+<div class="navbar-inner">
+<div class="container-fluid">
+<a class="btn btn-navbar" data-target=".nav-collapse" data-toggle="collapse">
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+</a>
+<a class="brand" href="./"><span class="site-name">kernelnote</span></a>
+<div class="nav-collapse collapse">
+<ul class="nav pull-right top-menu">
+<li>
+<a href=".">Home</a>
+</li>
+<li><a href="./pages/about.html">about</a></li>
+<li><a href="./categories.html">Categories</a></li>
+<li><a href="./tags.html">Tags</a></li>
+<li><a href="./archives.html">Archives</a></li>
+<li><form action="./search.html" class="navbar-search" onsubmit="return validateForm(this.elements['q'].value);"> <input class="search-query" id="tipue_search_input" name="q" placeholder="Search" type="text"/></form></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="container-fluid">
+<div class="row-fluid">
+<div class="span1"></div>
+<div class="span10">
+<article itemscope="">
+<div class="row-fluid">
+<header class="page-header span10 offset2">
+<h1>
+<a href="./how-cxl-hardware-works.html">
+                cxl解析系列之cxl设备底层工作机制
+            </a>
+</h1>
+</header>
+</div>
+<div class="row-fluid">
+<div class="span8 offset2 article-content">
+<h4>序言</h4>
+<p>上一篇主要讲了一下cxl的三种协议和三种设备，这一篇主要讲一下cxl设备底层的一些基本工作原理。在cxl的拓扑结构当中可以有cxl host bridge，cxl root port， cxl switch和cxl endpoint这几种类型的设备，下面我们来具体看一下不同类型设备在硬件层的一些工作机制。</p>
+<h4>DVSEC</h4>
+<p>DVSEC(Designated Vendor-Specific Extended Capbility)在cxl spec当中新引入的一个cap，cxl拓扑结构当中的每一种设备都会有一个或者多个DVSEC，然后通过这些DVSEC来实现相关信息如register的呈现。下面我们来先看一下cxl endpoint设备的PCIe DVSEC。具体如下图所示：</p>
+<p><img alt="desec" src="images/desec.png"/>
+<center> 图 1  PCIe DVSEC for cxl device </center>
+结合上面的图我们先来看一下 cxl device 的 designated vendor-specific header 设置，具体如下</p>
+<p><img alt="dvsec_header" src="images/dvsec_header.png"/>
+<center>图2 designated vendor-specific header </center></p>
+<p>接下来我们看一下<code>cxl cap</code> 相关标志位示意</p>
+<p><img alt="cxl_cap_1" src="images/cxl_cap_1.png"/>
+<center> 图3  part 1 of cxl capability of pcie dvsec </center></p>
+<p>从上图可以看到前三个bit分别表示cxl 的cache、 io、mem这三个协议使能状态，cxl.io default是必须要使能的。bit3和bits[5:4]都是跟cxl.mem相关。</p>
+<p><img alt="cxl_cap_2" src="images/cxl_cap_2.png"/>
+<center> 图4 part 2 of cxl capability of pci dvsec </center></p>
+<p>bit 6 主要跟cache writeback和invalidate 能力有关，在cxl.cache 使能的情况下这个必须是要设置上的。bit7，bits[10:8] ,bit 11都跟设备 Reset有关联。</p>
+<p><img alt="cxl_cap_3" src="images/cxl_cap_3.png"/></p>
+<p><center> 图5 part 3 of cxl capability of pci dvsec </center></p>
+<p>这里说一下Viral handling，它是cxl新引入的一种error检测机制。在Viral handling 处理机制当中，如果发现相关error它会沿着cxl 拓扑架构逐级上报。</p>
+<p>上面花了点篇幅来介绍cxl cap的相关标志位，下面我们来看一下cxl control 相关标志位。</p>
+<p><img alt="cxl_control" src="images/cxl_control.png"/>
+<center> 图6  cxl control of pci dvsec </center></p>
+<p>bit 0，bit 2 是可读写的也就是说可以控制设备cache和mem的enable。在往下继续之前我们先讲一下什么是Snoop Filter。在cache一致性场景下，每个cpu上都有一个snooper也就嗅探器或者说agent，它的作用是monitor相关cache block的变化以便update 自己cpu 上的cache line。正常的操作是说只要memory bus有相关的cache操作比如更新某个cache block，每个snooper都要去检查一下这个block是否也在自己的cache里面。在大多数的情况下，这个操作的结果都是无效的。为了优化这个操作，就引入了snoop filter即对cache block 进行过滤去除许多不必要的检测。
+讲完这个SF，我们再来看一下bits[7:3]表示的是SF能覆盖内存大小， bits[10:8] 表示的SF的粒度。其他几个bit位的含义也比较简单大家可以自行看一下。接下来看一下status相关的bit位，如下面两幅图所示(status and status2)，其中的示意也并不难理解大家可以自行看一下。</p>
+<p><img alt="cxl_dev_status_1" src="images/cxl_dev_status_1.png"/>
+<img alt="cxl_dev_status2" src="images/cxl_dev_status2.png"/>
+<center> 图7 cxl status and status2 of pcie dvsec</center>
+接下来我们看一下图1中的range register的作用。如果cxl.mem 使能且HDM_COUNT 等于1的话则range 1 register必须要初始化，如果HDM_COUNT 等于2的话则range 2 register 也必须要初始化。每个range register都包含4个子的register分别是Size High, Size Low, Base Higth, Base Low。我们先来看一下range 1 register Size High：</p>
+<ul>
+<li>bits 31~0表示Memory_Size_High，它指的是HDM size的bits 63~32位。</li>
+</ul>
+<p>接下来我们看一下range 1 Size Low:</p>
+<p><img alt="range1_low_1" src="images/range1_low_1.png"/>
+<center>图8 part 1 of range 1 size low register of pcie dvsec</center></p>
+<p>bit 0 如果设置上则表示 range 1 Size high and Size low register是有效的，bit 1则表示hdm是否可用如果被设置上则表示cxl hdm已经初始化完成处于可用状态，bits 4:2 则表示hdm底层所使用的存储介质类型，bits 7:5则表示 hdm的使用类型是作为普通内存去使用还是作为storage去使用，我们接着往下看</p>
+<p><img alt="cxl_range1_reg_2" src="images/cxl_range1_reg_2.png"/>
+<center>图9 part 2 of range 1 size low register of pcie dvsec </center></p>
+<p>bits[12:8] 主要是memory interleave也称为内存交织相关的一些配置， 内存交织技术主要是通过同时并行访问dram的多个bank来提升内存访问性能。上面的配置主要涉及到interleave的粒度相关。</p>
+<p><img alt="range1_reg_3" src="images/range1_reg_3.png"/>
+<center>图10 part 3 of range 1 size low register of pcie dvsec </center></p>
+<p>bits 31:28 表示的是memory size的 31:28位，bits 15:13 表示的是memory active的timeout，这个timeout是由硬件来设置的。</p>
+<p>上面介绍完了range 1  register的Size High和Size Low，接下来我们看一下Base High和Base Low。
+- Base High
+reg大小为32bits，对应hdm memory base即hpa的起始地址 bits 63:32
+- Base Low
+reg大小也为32bits，其中bits 31:28对应hdm memory base即hpa的起始地址 bits 31:28</p>
+<p>注：<strong>如果hdm decoder使能的情况下，这两个reg将不会使用到。至于什么是hdm decoder我们会在后续文章当中详细介绍</strong>。</p>
+<p>讲完cxl endpoint 的PCIe DVSEC 之后，我们再来看一下另外一个DVSEC名日GPF DVSEC，具体格式如下</p>
+<p><img alt="gpf_dvsec" src="images/gpf_dvsec.png"/>
+<center> 图11 gpf dvsec </center>
+这里重点讲一下什么是GPF，其全称为Global Persistent Flush 其主要负责在系统掉电的时候把in flight的 data以及cache当中的内容 flush到pmem当中。GPF操作可以分为两个阶段，这里就不详细介绍了，大家可以自行去读一下cxl spec。</p>
+<p>接下来我们看一下跟cxl port有关的DVSEC，cxl 2.0 Extensions DVSEC </p>
+<p><img alt="cxl_port_dvsec" src="images/cxl_port_dvsec.png"/>
+<center>图12 cxl 2.0 extensions dvsec </center></p>
+<p>需要注意的是cxl 2.0 port(root port，usp, dsp) 必须要在配置空间实现这个DVSEC，通常在cxl 2.0协议之下这些bit值其本都会使用default 值即全0。接着再看跟cxl port 相关的另外一个重要的DVSEC，具体格式如下</p>
+<p><img alt="flex_bus_dvsec" src="images/flex_bus_dvsec.png"/>
+<center>图13 pcie dvsec for flex bus port </center>
+至于每个bit位的相关示意可以自行去看一下spec也比较好懂这里就不一一详述了。另外，cxl port 也都要实现GPF DVSEC。</p>
+<h4>cxl memory mapped registers</h4>
+<p>讲完dvsec，我们再来看看相关的register。在cxl 2.0协议下有两大类的registers，一类是component registers，它又可以分为cxl port and cxl ep component registers和 CHBCR(cxl host bridge component registers)；另外一大类就是跟具体设备相关的device registers。除了CHBCR的base address是通过ACPI 的CEDT表来进行描述的，其他的都是需要Register Locator DVSEC structure 来进行描述，我们先来看一下register locator DVSEC的具体格式</p>
+<p><img alt="reg_locator_dvsec" src="images/reg_locator_dvsec.png"/>
+<center>图14 cxl register locator dvsec </center></p>
+<p>dvsec header相关的这里就不具体说了，我们具体看一下register block。从上图可以看到每个register block 都包含了Low 和High两个register，下面分别来看一下相关格式说明</p>
+<p><img alt="locator_block_low" src="images/locator_block_low.png"/>
+<center>图15 cxl register block offset Low </center>
+- bits 2:0
+ 有6种不同的取值分别是0到5，每个值与设备的bar的编号以及在配置空间的offset。举个例子，如果表示的值为1，则表示这个设备必须在配置空间实现bar1相关的寄存器。
+- bits 15:8 
+表示register block的格式，从上面来也是有三种。比较常用的是01h和03h，接下来先看一下component registers。</p>
+<p><img alt="cxl_cm_register" src="images/cxl_cm_register.png"/>
+<center>图16 cxl subsystem component registers ranges </center></p>
+<p>如上图所示，component registers总大小为64k，并定义了相关registers在整个component registers当中的range和大小。下面我们来看一下cxl.cache和cxl.mem registers，它们大小总共为4kB，然后通过一系列capability header指针数组的方式来描述具体的registers。具体看一下这个range的结构</p>
+<p><img alt="cxl_cm_range_reg" src="images/cxl_cm_range_reg.png"/>
+<center>图17 cxl.cache and cxl.mem architectural registers discovery </center>
+如图所示，从4kb开始offset 0处是capability header，header里面定义了version，cap_id，另外就是 capability headers数组大小，每个cap header 大小为4bytes。接着就是一些具体的cap header了，图中也list了多个不同的header。以hdm cap为例子，我来看一下它的具体结构</p>
+<p><img alt="hdm_cap" src="images/hdm_cap.png"/>
+<center> 图18 cxl hdm decoder capability header</center></p>
+<p>重点看一下bits 31:20 其表示的是 cxl  hdm capability structer 具体的offset，通过这个offset就能找到hdm cap 具体的register了。其他的cap header 具体格式也是类似，这里就不一一赘述了。接着看一下 cxl mem device register，先来看一下具体的格式</p>
+<p><img alt="cxl_device_register" src="images/cxl_device_register.png"/>
+<center> 图19 cxl mem device registers </center></p>
+<p>结合上图可以看到跟component registers 实现机制基本一致，也是通过通过cap header 数组的方式来描述相关的reg。先看一下offset 0处的 cxl device capabilities array register</p>
+<p><img alt="cxl_device_cap_array_reg" src="images/cxl_device_cap_array_reg.png"/>
+<center> 图20 cxl device capabilities array register</center></p>
+<p>上图当中最重要的就是bits 47:32 也即 capabilities count，然后我们再来看一下cxl device capability header register的具体格式：</p>
+<p><img alt="cxl_cap_header_reg" src="images/cxl_cap_header_reg.png"/>
+<center> 图21 cxl device capability header register</center></p>
+<p>上图中有几个比较重要的信息一个是bits 15:0 它描述的是具体的capability ID，另外一个是bits 63:32 描述的是capability register offset，还有一个就是bits 95:64 描述的是capability register size。关于cxl mem device 相关的capability  register 具体见下图</p>
+<p><img alt="cxl_device_caps" src="images/cxl_device_caps.png"/></p>
+<p><center>图22 device capability ids </center></p>
+<p>接下来我们聊聊cxl host bridge相关的memory mapped 的register的呈现。大家都比较清楚，bios主要是通过硬件acpi 的dsdt表来发现Host bridge的，那么在pcie的场景下bridge相关的mmio信息主要是通过crs表来描述的。而在cxl场景下，其主要是通过cedt表当中的CHBS(cxl host bridge structure)来描述的。下面先来看一下cedt表的具体格式</p>
+<p><img alt="cedt_header" src="images/cedt_header.png"/>
+<center> 图23 cedt header</center>
+从offset 36地方开始就是具体的cedt structure了，具体看一下structure的格式</p>
+<p><img alt="chbs" src="images/chbs.png"/>
+<center> 图24 CHBS structure </center>
+从上图可以看到每个structure里面都定义UID(用来区分设备)，cxl version以及register的起始地址。再回到图15当中，继续往下看</p>
+<ul>
+<li>bits 31:16</li>
+</ul>
+<p>表示这个BAR相关联的cap register(component or device capability register)  address 与 这个bar(mmio空间)地址的offset 的31~16 位(<code>address_of_register = offset + base_address_of_bar</code>) </p>
+<p>讲完register  offset low 的格式再来看一下register offset high 格式，也比较简单，表示的是offset 63:32bits：</p>
+<p><img alt="register_offset_high" src="images/register_offset_high.png"/>
+<center> 图25 register offset high </center></p>
+<h4>总结</h4>
+<ul>
+<li>os内核主要是通过一系列的dvsec capabilities来发现、配置、控制cxl device。</li>
+<li>cxl设备memory mapped registers主要有component registes、device registers这两大类主是通过register locator DVSEC来进行描述，cxl host bridge 的CHBCR主要是通过ACPI表当中的cedt来描述。
+上面在os cxl driver里面有大量的涉及，如果大家感兴趣可以尝试阅读一下目前kernel 最新版当中的cxl 驱动。下一篇，我们来讲一下cxl tye3设备。</li>
+</ul>
+<hr/>
+</div>
+<section class="span2" id="article-sidebar">
+<h4>Published</h4>
+<time datetime="2022-07-24T00:00:00+08:00" itemprop="dateCreated"> 7 24, 2022</time>
+<h4>Category</h4>
+<a class="category-link" href="./categories.html#articles-ref">articles</a>
+<h4>Tags</h4>
+<ul class="list-of-tags tags-in-article">
+<li><a href="./tags.html#cxl-ref">cxl
+                    <span>2</span>
+</a></li>
+<li><a href="./tags.html#cxl-hardware-ref">cxl hardware
+                    <span>1</span>
+</a></li>
+</ul>
+</section>
+</div>
+</article>
+</div>
+<div class="span1"></div>
+</div>
+</div>
+</div>
+<footer>
+<div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" rel="nofollow noopener noreferrer" target="_blank" title="Pelican Home Page">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" rel="nofollow noopener noreferrer" target="_blank" title="Theme Elegant Home Page">Elegant</a>
+</div>
+</footer> <script src="//code.jquery.com/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+<script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+<script>
+    (function () {
+        if (window.location.hash.match(/^#comment-\d+$/)) {
+            $('#comment_thread').collapse('show');
+        }
+    })();
+    window.onhashchange=function(){
+        if (window.location.hash.match(/^#comment-\d+$/))
+            window.location.reload(true);
+    }
+    $('#comment_thread').on('shown', function () {
+        var link = document.getElementById('comment-accordion-toggle');
+        var old_innerHTML = link.innerHTML;
+        $(link).fadeOut(200, function() {
+            $(this).text('Click here to hide comments').fadeIn(200);
+        });
+        $('#comment_thread').on('hidden', function () {
+            $(link).fadeOut(200, function() {
+                $(this).text(old_innerHTML).fadeIn(200);
+            });
+        })
+    })
+</script>
+</body>
+<!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>
