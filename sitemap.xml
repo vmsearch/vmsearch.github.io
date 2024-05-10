@@ -5,35 +5,35 @@ xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
 <url>
 <loc>https://kernelnote.com/</loc>
-<lastmod>2024-04-29T20:31:49-00:00</lastmod>
+<lastmod>2024-05-10T09:28:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
 <loc>https://kernelnote.com/tags.html</loc>
-<lastmod>2024-04-29T20:31:49-00:00</lastmod>
+<lastmod>2024-05-10T09:28:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
 <loc>https://kernelnote.com/categories.html</loc>
-<lastmod>2024-04-29T20:31:49-00:00</lastmod>
+<lastmod>2024-05-10T09:28:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
 <loc>https://kernelnote.com/authors.html</loc>
-<lastmod>2024-04-29T20:31:49-00:00</lastmod>
+<lastmod>2024-05-10T09:28:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
 
 <url>
 <loc>https://kernelnote.com/archives.html</loc>
-<lastmod>2024-04-29T20:31:49-00:00</lastmod>
+<lastmod>2024-05-10T09:28:47-00:00</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
@@ -55,6 +55,13 @@ xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
 <loc>https://kernelnote.com/how-to-teach-young-man.html</loc>
 <lastmod>2022-09-10T00:00:00+08:00</lastmod>
+<changefreq>monthly</changefreq>
+<priority>0.7</priority>
+</url>
+
+<url>
+<loc>https://kernelnote.com/how-to-improve-self-in-work.html</loc>
+<lastmod>2022-08-17T00:00:00+08:00</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
@@ -195,6 +202,20 @@ xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
 <loc>https://kernelnote.com/tag/xin-ren.html</loc>
 <lastmod>2022-09-10T00:00:00+08:06</lastmod>
+<changefreq>daily</changefreq>
+<priority>0.5</priority>
+</url>
+
+<url>
+<loc>https://kernelnote.com/tag/gong-zuo-ti-sheng.html</loc>
+<lastmod>2022-08-17T00:00:00+08:06</lastmod>
+<changefreq>daily</changefreq>
+<priority>0.5</priority>
+</url>
+
+<url>
+<loc>https://kernelnote.com/tag/zi-wo-ti-sheng.html</loc>
+<lastmod>2022-08-17T00:00:00+08:06</lastmod>
 <changefreq>daily</changefreq>
 <priority>0.5</priority>
 </url>
