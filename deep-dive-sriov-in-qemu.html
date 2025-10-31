@@ -1,30 +1,36 @@
 <!DOCTYPE html>
-
 <html lang="zh_cn">
-<head>
-<meta charset="utf-8"/>
-<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<meta content="duma" name="author">
-<meta content="article" property="og:type">
-<meta content="summary" name="twitter:card"/>
-<meta content="pcie, SRIOV, articles, " name="keywords">
-<meta content="深入解析qemu侧SRIOV实现 " property="og:title">
-<meta content="./deep-dive-sriov-in-qemu.html" property="og:url"/>
-<meta content="序言 sriov的技术大家基本上都能耳熟能详了，但是大多也只停留在spec层面或者说知道sriov如何使能上。这篇文章主要想通过qemu侧对sirov后端相关模拟的解析来让大家对sriov有一个更加深入的理解。后续的行文主要分为以下两个方面 - os侧 sriov相关使能解析 - qemu侧对sriov模拟 OS侧sriov 使能 os在设备扫描过程中会对设备的相关capability进行一些初始化的工作，具体函数见 …" property="og:description"/>
-<meta content="kernelnote" property="og:site_name"/>
-<meta content="duma" property="og:article:author"/>
-<meta content="2022-06-26T00:00:00+08:00" property="og:article:published_time"/>
-<meta content="深入解析qemu侧SRIOV实现 " name="twitter:title"/>
-<meta content="序言 sriov的技术大家基本上都能耳熟能详了，但是大多也只停留在spec层面或者说知道sriov如何使能上。这篇文章主要想通过qemu侧对sirov后端相关模拟的解析来让大家对sriov有一个更加深入的理解。后续的行文主要分为以下两个方面 - os侧 sriov相关使能解析 - qemu侧对sriov模拟 OS侧sriov 使能 os在设备扫描过程中会对设备的相关capability进行一些初始化的工作，具体函数见 …" name="twitter:description"/>
-<title>深入解析qemu侧SRIOV实现  · kernelnote
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="序言 sriov的技术大家基本上都能耳熟能详了，但是大多也只停留在spec层面或者说知道sriov如何使能上。这篇文章主要想通过qemu侧对sirov后端相关模拟的解析来让大家对sriov有一个更加深入的理解。后续的行文主要分为以下两个方面 - os侧 sriov相关使能解析 - qemu侧对sriov模拟 OS侧sriov 使能 os在设备扫描过程中会对设备的相关capability进行一些初始化的工作，具体函数见 …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="pcie, SRIOV, articles, " />
+
+<meta property="og:title" content="深入解析qemu侧SRIOV实现 "/>
+<meta property="og:url" content="./deep-dive-sriov-in-qemu.html" />
+<meta property="og:description" content="序言 sriov的技术大家基本上都能耳熟能详了，但是大多也只停留在spec层面或者说知道sriov如何使能上。这篇文章主要想通过qemu侧对sirov后端相关模拟的解析来让大家对sriov有一个更加深入的理解。后续的行文主要分为以下两个方面 - os侧 sriov相关使能解析 - qemu侧对sriov模拟 OS侧sriov 使能 os在设备扫描过程中会对设备的相关capability进行一些初始化的工作，具体函数见 …" />
+<meta property="og:site_name" content="KernelNote - AI基础设施技术博客" />
+<meta property="og:article:author" content="duma" />
+<meta property="og:article:published_time" content="2022-06-26T00:00:00+08:00" />
+<meta name="twitter:title" content="深入解析qemu侧SRIOV实现 ">
+<meta name="twitter:description" content="序言 sriov的技术大家基本上都能耳熟能详了，但是大多也只停留在spec层面或者说知道sriov如何使能上。这篇文章主要想通过qemu侧对sirov后端相关模拟的解析来让大家对sriov有一个更加深入的理解。后续的行文主要分为以下两个方面 - os侧 sriov相关使能解析 - qemu侧对sriov模拟 OS侧sriov 使能 os在设备扫描过程中会对设备的相关capability进行一些初始化的工作，具体函数见 …">
+
+        <title>深入解析qemu侧SRIOV实现  · KernelNote - AI基础设施技术博客
 </title>
-<link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet"/>
-<link href="./theme/css/elegant.prod.css" media="screen" rel="stylesheet" type="text/css"/>
-<link href="./theme/css/custom.css" media="screen" rel="stylesheet" type="text/css"/>
-<link href="https://kernelnote.com/feeds/all.atom.xml" rel="alternate" title="kernelnote - Full Atom Feed" type="application/atom+xml">
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
 <!-- Global site tag (gtag.js) - Google Analytics -->
-<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
@@ -32,50 +38,57 @@
 
   gtag('config', 'G-LRRMJ08SPD');
 </script>
-</link></meta></meta></meta></meta><link href="https://kernelnote.com/deep-dive-sriov-in-qemu.html" rel="canonical"/><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "kernelnote", "item": "https://kernelnote.com"}, {"@type": "ListItem", "position": 2, "name": "Deep dive sriov in qemu", "item": "https://kernelnote.com/deep-dive-sriov-in-qemu.html"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "author": {"@type": "Person", "name": "duma"}, "publisher": {"@type": "Organization", "name": "kernelnote"}, "headline": "深入解析qemu侧SRIOV实现", "about": "articles", "datePublished": "2022-06-26 00:00"}</script></head>
-<body>
-<div id="content">
-<div class="navbar navbar-static-top">
-<div class="navbar-inner">
-<div class="container-fluid">
-<a class="btn btn-navbar" data-target=".nav-collapse" data-toggle="collapse">
-<span class="icon-bar"></span>
-<span class="icon-bar"></span>
-<span class="icon-bar"></span>
-</a>
-<a class="brand" href="./"><span class="site-name">kernelnote</span></a>
-<div class="nav-collapse collapse">
-<ul class="nav pull-right top-menu">
-<li>
-<a href=".">Home</a>
-</li>
-<li><a href="./pages/about.html">about</a></li>
-<li><a href="./categories.html">Categories</a></li>
-<li><a href="./tags.html">Tags</a></li>
-<li><a href="./archives.html">Archives</a></li>
-<li><form action="./search.html" class="navbar-search" onsubmit="return validateForm(this.elements['q'].value);"> <input class="search-query" id="tipue_search_input" name="q" placeholder="Search" type="text"/></form></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-<div class="container-fluid">
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<article itemscope>
 <div class="row-fluid">
-<div class="span1"></div>
-<div class="span10">
-<article itemscope="">
-<div class="row-fluid">
-<header class="page-header span10 offset2">
-<h1>
-<a href="./deep-dive-sriov-in-qemu.html">
+    <header class="page-header span10 offset2">
+        <h1>
+            <a href="./deep-dive-sriov-in-qemu.html">
                 深入解析qemu侧SRIOV实现
             </a>
-</h1>
-</header>
+        </h1>
+    </header>
 </div>
+
 <div class="row-fluid">
-<div class="span8 offset2 article-content">
-<h4>序言</h4>
+        <div class="span8 offset2 article-content">
+            
+            <h4>序言</h4>
 <p>sriov的技术大家基本上都能耳熟能详了，但是大多也只停留在spec层面或者说知道sriov如何使能上。这篇文章主要想通过qemu侧对sirov后端相关模拟的解析来让大家对sriov有一个更加深入的理解。后续的行文主要分为以下两个方面
 - os侧 sriov相关使能解析
 - qemu侧对sriov模拟</p>
@@ -95,8 +108,9 @@
         return -ENODEV;
 }
 </code></pre></div>
+
 <p>首先会判断是否是一个pcie设备，如果是pcie设备则接着看该pcie设备是否有sriov功能(是否有这个功能主要是通过其extend cap是否有SRIOV CAP ID 来确定的)。如果有sriov功能则对其进行相关的初始化工作，具体的实现在<code>sriov_init</code> 当中。为了让大家更好的理解这个函数当中的相关逻辑，我们先看一下SRIOV extended cap的结构</p>
-<p><img alt="2D0FE178-63E5-4547-9869-6C19586B95F1" src="images/2D0FE178-63E5-4547-9869-6C19586B95F1.png"/></p>
+<p><img alt="2D0FE178-63E5-4547-9869-6C19586B95F1" src="images/2D0FE178-63E5-4547-9869-6C19586B95F1.png"></p>
 <p>看完之后，我们来细分一下这个函数的实现
 - 读取sriov control的值，如果读取的值显示该设备的sriov已经使能则disable it，实现方式为往<code>PCI_SRIOV_CTRL</code> 写0
 - 然后通过<code>pci_ari_enabled(dev-&gt;bus)</code> 判断设备所挂在的bus是否enable 了ari feature，如果enable了则需要将sriov control的ARI位了要置上。<strong>将这里要重点讲一下ari，它的全称为Alternative Routing-ID Interpretation，那么中文也可译为可替代的route id即可以把传统的routing id 机制替换掉。先来说一下route id，在pcie 链路上，tlp包常用的路由方式有两种。一种是基于bus、device、function组在的一个16 bit的id也即routing id，还有一种就是基于mmio或者pio地址进行路由的方式。再回到ARI上，之所以引入这种机制原因在于传统的routing id当中function只有3bit最多支持8个vf，很明显是无法满足实际的应用场景的，因此ARI将device number(5 bits) 合并到了Function number当中，这样routing id就变成了8-bit Bus Number + 8-bit Function Number的格式，最多支持的Bus数量不变，支持的Function数量增大到256个</strong>。注意，除了pf设备本身需要enable ARI之外，其所在的root port或者pcie switch 都需要enable ARI。
@@ -106,7 +120,7 @@
 <div class="highlight"><pre><span></span><code><span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">PCI_SRIOV_NUM_BARS</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="err">{</span>
 <span class="w">                </span><span class="n">res</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dev</span><span class="o">-&gt;</span><span class="n">resource</span><span class="o">[</span><span class="n">i + PCI_IOV_RESOURCES</span><span class="o">]</span><span class="p">;</span>
 <span class="w">                </span><span class="cm">/*</span>
-<span class="cm">                 * If it is already FIXED, don't change it, something</span>
+<span class="cm">                 * If it is already FIXED, don&#39;t change it, something</span>
 <span class="cm">                 * (perhaps EA or header fixups) wants it this way.</span>
 <span class="cm">                 */</span>
 <span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">res</span><span class="o">-&gt;</span><span class="n">flags</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="n">IORESOURCE_PCI_FIXED</span><span class="p">)</span>
@@ -124,24 +138,28 @@
 <span class="w">                </span><span class="n">iov</span><span class="o">-&gt;</span><span class="n">barsz</span><span class="o">[</span><span class="n">i</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">resource_size</span><span class="p">(</span><span class="n">res</span><span class="p">);</span>
 <span class="w">                </span><span class="o">//</span><span class="w"> </span><span class="n">更新</span><span class="w"> </span><span class="n">resource</span><span class="w"> </span><span class="k">range</span>
 <span class="w">                </span><span class="n">res</span><span class="o">-&gt;</span><span class="k">end</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">res</span><span class="o">-&gt;</span><span class="k">start</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">resource_size</span><span class="p">(</span><span class="n">res</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">total</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
-<span class="w">                </span><span class="n">pci_info</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="ss">"VF(n) BAR%d space: %pR (contains BAR%d for %d VFs)\n"</span><span class="p">,</span>
+<span class="w">                </span><span class="n">pci_info</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="ss">&quot;VF(n) BAR%d space: %pR (contains BAR%d for %d VFs)\n&quot;</span><span class="p">,</span>
 <span class="w">                         </span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">res</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">total</span><span class="p">);</span>
 <span class="w">                </span><span class="n">i</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="n">bar64</span><span class="p">;</span>
 <span class="w">                </span><span class="n">nres</span><span class="o">++</span><span class="p">;</span>
 <span class="w">        </span><span class="err">}</span>
 </code></pre></div>
+
 <p>那么pf的每个vf  bar 的mmio 空间都是从相应的 <code>PCI_IOV_RESOURCE</code> ~ <code>PCI_IOV_RESOURCE_END</code> resouce里面来分配，具体的vf mmio 计算公式如下</p>
 <div class="highlight"><pre><span></span><code>&lt;VF BAR start&gt; + &lt;VF number&gt; * &lt;BAR sz&gt; + &lt;offset&gt;
 </code></pre></div>
+
 <ul>
 <li>从<code>PCI_SRIOV_VF_DID</code> 处读取vf device_id，然后通过<code>compute_max_vf_buses</code> 来计算vf所需要使用的bus num，然后在<code>pcibios_assign_all_buses</code> 里面需要将这些bus num reserve出来。具体的计算逻辑大家可以看一下相关函数实现也比较简单，这里我就不详述了。</li>
 </ul>
 <p>上面分析完了pcie设备sriov的相关初始化，下面我们来看一下如何将一个PF的VF分配出来。通常我们需要在os侧手动触发如下的动作</p>
 <div class="highlight"><pre><span></span><code>echon $num &gt; /sys/bus/pci/devices/$bdf/sriov_numvfs
 </code></pre></div>
+
 <p>而上面这个动作最终trigger执行的函数为<code>sriov_numvfs_store</code> ，这个函数最终要执行的函数为</p>
 <div class="highlight"><pre><span></span><code><span class="n">pdev</span><span class="o">-&gt;</span><span class="n">driver</span><span class="o">-&gt;</span><span class="n">sriov_configure</span><span class="p">(</span><span class="n">pdev</span><span class="p">,</span><span class="w"> </span><span class="n">num_vfs</span><span class="p">);</span>
 </code></pre></div>
+
 <p>也即这个PF 所属driver当中注册的sriov_configure函数。一般支持sriov的设备driver当中都会注册相应的sriov_configure callback函数，比如<code>virtio_pci_sriov_configure</code>，下面我们就以它为例来分析一下这个callback函数。
 - 先判断这个dev的status是不是ok的即<code>VIRTIO_CONFIG_S_DRIVER_OK</code>
 - 先再确认一下是否支持sriov即<code>VIRTIO_F_SR_IOV</code> 位是否置上。
@@ -159,6 +177,7 @@
                         goto failed;
         }
 </code></pre></div>
+
 <p>接下来我们分析一下 <code>pci_iov_add_virtfn</code> 的具体实现，通过这个函数我来看一下vf最终的probe流程。</p>
 <ul>
 <li><code>virtfn_add_bus</code>  计算VF的bus num，以PF 的bus为parent寻找VF的bus，如果找不到则需要重新创建一个。VF的bus num计算公式如下</li>
@@ -166,6 +185,7 @@
 <div class="highlight"><pre><span></span><code>PF-&gt;bus-&gt;number + ((PF-&gt;devfn + PF-&gt;sriov-&gt;offset +
                                     PF-&gt;sriov-&gt;stride * vf_id) &gt;&gt; 8);
 </code></pre></div>
+
 <p>正常情况下 VF和PF应该是在同一个bus上。</p>
 <ul>
 <li><code>pci_alloc_dev</code> 为VF创建 <code>pci_dev</code> 结构，同时计算VF的devfn。具体的计算公式如下</li>
@@ -173,6 +193,7 @@
 <div class="highlight"><pre><span></span><code>(PF-&gt;devfn + PF-&gt;sriov-&gt;offset +
                 PF-&gt;sriov-&gt;stride * vf_id) &amp; 0xff
 </code></pre></div>
+
 <ul>
 <li><code>pci_setup_device</code> 初始化设备相关的信息，比如bar大小等。紧接着为vf分配 bar mmio空间，具体逻辑如下</li>
 </ul>
@@ -191,6 +212,7 @@
 <span class="w">                </span><span class="n">BUG_ON</span><span class="p">(</span><span class="n">rc</span><span class="p">);</span>
 <span class="w">        </span><span class="err">}</span>
 </code></pre></div>
+
 <p>从上面的逻辑可以看出，一个VF的所有的bar mmio resource都是从这个PF的<code>PCI_IOV_RESOURCE</code> 里面分配的。</p>
 <ul>
 <li>接着就是将vf跟bus绑定，然后可以probe对应的驱动了。具体逻辑可以见<code>pci_device_add</code> 和<code>pci_bus_add_device</code> 这里就不赘述了。</li>
@@ -238,6 +260,7 @@
 <span class="w">    </span><span class="n">dev</span><span class="o">-&gt;</span><span class="nf">exp</span><span class="p">.</span><span class="n">sriov_pf</span><span class="p">.</span><span class="n">vf_bar_type</span><span class="o">[</span><span class="n">region_num</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">type</span><span class="p">;</span>
 <span class="err">}</span>
 </code></pre></div>
+
 <p>上面的逻辑实现了vf bar的初始化，但是有些地方还需要完善一下。如上面分析，一个PF的所有的VF bar resource(比如bar0) 是在由PF维护的一个大的resource 空间(其大小vf_bar_size * total)内来分配的。因此这个函数可以这样优化一下(只列出需要增加的代码)</p>
 <div class="highlight"><pre><span></span><code><span class="o">//</span><span class="n">在sriov_pf当中定义一个vf_ioregions</span>
 <span class="n">PCIIORegion</span><span class="w"> </span><span class="n">vf_ioregions</span><span class="o">[</span><span class="n">PCI_SRIOV_NUM_BARS</span><span class="o">]</span><span class="err">；</span>
@@ -251,11 +274,12 @@
 <span class="n">r</span><span class="o">-&gt;</span><span class="n">address_space</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pci_get_bus</span><span class="p">(</span><span class="n">dev</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">address_space_mem</span><span class="p">;</span>
 <span class="nc">char</span><span class="w"> </span><span class="n">vf_bar_name</span><span class="o">[</span><span class="n">8</span><span class="o">]</span><span class="p">;</span>
 <span class="n">r</span><span class="o">-&gt;</span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">g_malloc0</span><span class="p">(</span><span class="n">sizeof</span><span class="p">(</span><span class="n">MemoryRegion</span><span class="p">));</span>
-<span class="n">g_snprintf</span><span class="p">(</span><span class="n">vf_bar_name</span><span class="p">,</span><span class="w"> </span><span class="n">sizeof</span><span class="p">(</span><span class="n">vf_bar_name</span><span class="p">),</span><span class="w"> </span><span class="ss">"vf_bar%d"</span><span class="p">,</span><span class="w"> </span><span class="n">region_num</span><span class="p">);</span>
+<span class="n">g_snprintf</span><span class="p">(</span><span class="n">vf_bar_name</span><span class="p">,</span><span class="w"> </span><span class="n">sizeof</span><span class="p">(</span><span class="n">vf_bar_name</span><span class="p">),</span><span class="w"> </span><span class="ss">&quot;vf_bar%d&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">region_num</span><span class="p">);</span>
 <span class="n">memory_region_init</span><span class="p">(</span><span class="n">r</span><span class="o">-&gt;</span><span class="n">memory</span><span class="p">,</span><span class="k">OBJECT</span><span class="p">(</span><span class="n">dev</span><span class="p">)</span><span class="w"> </span><span class="n">vf_bar_name</span><span class="p">,</span><span class="w"> </span><span class="n">r</span><span class="o">-&gt;</span><span class="k">size</span><span class="p">);</span>
 <span class="o">//</span><span class="w"> </span><span class="n">pf</span><span class="w"> </span><span class="n">初始化的时候段mmio空间可以先不使能</span><span class="err">，</span><span class="n">因为不确定用户是否会打开vf功能</span><span class="err">。</span>
 <span class="n">memory_region_set_enabled</span><span class="p">(</span><span class="n">r</span><span class="o">-&gt;</span><span class="n">memory</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">);</span>
 </code></pre></div>
+
 <p>这两个函数都是在具体设备<code>realize</code> 函数当中去调用。上面我们介绍完了pf 的sriov feature的初始化，下面我们来看一下sriov vf 使能过程当中qemu这一端的相关action。os侧驱动通过将sriov control 的<code>PCI_SRIOV_CTRL_VFE</code> 和 <code>PCI_SRIOV_CTRL_MSE</code> 置上来告知qemu这一侧要开始拉起vf，具体实现是在 <code>pcie_sriov_config_write</code> 函数</p>
 <div class="highlight"><pre><span></span><code><span class="nx">void</span><span class="w"> </span><span class="nx">pcie_sriov_config_write</span><span class="p">(</span><span class="nx">PCIDevice</span><span class="w"> </span><span class="o">*</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">uint32_t</span><span class="w"> </span><span class="nx">address</span><span class="p">,</span>
 <span class="w">                             </span><span class="nx">uint32_t</span><span class="w"> </span><span class="nx">val</span><span class="p">,</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="nx">len</span><span class="p">)</span>
@@ -288,6 +312,7 @@
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
+
 <p>上面这段代码有点缺陷即如果是 <code>PCI_SRIOV_CTRL_MSE</code> 则需要enable 上面额外添加的vf_ioregions，下面写段伪代码</p>
 <div class="highlight"><pre><span></span><code><span class="kt">int</span><span class="w"> </span><span class="n">j</span><span class="p">;</span>
 <span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">j</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0</span><span class="p">;</span><span class="w"> </span><span class="n">j</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">PCI_SRIOV_NUM_BARS</span><span class="w"> </span><span class="p">;</span><span class="n">j</span><span class="w"> </span><span class="o">++</span><span class="p">)</span>
@@ -295,6 +320,7 @@
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">r</span><span class="o">-&gt;</span><span class="n">memory</span><span class="p">)</span><span class="w"> </span>
 <span class="w">        </span><span class="n">memory_region_set_enabled</span><span class="p">(</span><span class="n">r</span><span class="o">-&gt;</span><span class="n">memory</span><span class="p">,</span><span class="w"> </span><span class="n">true</span><span class="p">);</span>
 </code></pre></div>
+
 <p>接着来看 <code>register_vfs</code> ，首先获取vf_offset、vf_stride和前端要enable的num_vfs。前两个主要是用来计算vf的devfn，具体计算公式见上面。然后通过一个loop 调用<code>register_vf</code> 来分别对每个vf进行使能，具体逻辑如下</p>
 <div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="n">PCIDevice</span><span class="w"> </span><span class="o">*</span><span class="n">register_vf</span><span class="p">(</span><span class="n">PCIDevice</span><span class="w"> </span><span class="o">*</span><span class="n">pf</span><span class="p">,</span><span class="w"> </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">devfn</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="nb">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">,</span>
 <span class="w">                              </span><span class="n">uint16_t</span><span class="w"> </span><span class="n">vf_num</span><span class="p">)</span>
@@ -318,6 +344,7 @@
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">dev</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
+
 <p>上面的逻辑核心就在使用<code>qdev_realize</code> 对vf设备进行初始化，具体的流程可以参考一下<a href="https://mp.weixin.qq.com/s/10gADhifKyb24bFomXQ8Ug">qemu QOM解析</a>这篇文章。在vf设备初始化过程中有一个地方需要注意一下，就是通常pf在初始化的时候会调用<code>pci_register_bar</code> ，而vf在初始化的时候需要调用<code>pcie_sriov_vf_register_bar</code> ，具体的实现如下</p>
 <div class="highlight"><pre><span></span><code><span class="n">void</span><span class="w"> </span><span class="n">pcie_sriov_vf_register_bar</span><span class="p">(</span><span class="n">PCIDevice</span><span class="w"> </span><span class="o">*</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="nc">int</span><span class="w"> </span><span class="n">region_num</span><span class="p">,</span>
 <span class="w">                                </span><span class="n">MemoryRegion</span><span class="w"> </span><span class="o">*</span><span class="n">memory</span><span class="p">)</span>
@@ -333,8 +360,8 @@
 <span class="w">    </span><span class="n">type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dev</span><span class="o">-&gt;</span><span class="nf">exp</span><span class="p">.</span><span class="n">sriov_vf</span><span class="p">.</span><span class="n">pf</span><span class="o">-&gt;</span><span class="nf">exp</span><span class="p">.</span><span class="n">sriov_pf</span><span class="p">.</span><span class="n">vf_bar_type</span><span class="o">[</span><span class="n">region_num</span><span class="o">]</span><span class="p">;</span>
 
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="err">!</span><span class="n">is_power_of_2</span><span class="p">(</span><span class="k">size</span><span class="p">))</span><span class="w"> </span><span class="err">{</span>
-<span class="w">        </span><span class="n">error_report</span><span class="p">(</span><span class="ss">"%s: PCI region size must be a power"</span>
-<span class="w">                     </span><span class="ss">" of two - type=0x%x, size=0x%"</span><span class="n">FMT_PCIBUS</span><span class="p">,</span>
+<span class="w">        </span><span class="n">error_report</span><span class="p">(</span><span class="ss">&quot;%s: PCI region size must be a power&quot;</span>
+<span class="w">                     </span><span class="ss">&quot; of two - type=0x%x, size=0x%&quot;</span><span class="n">FMT_PCIBUS</span><span class="p">,</span>
 <span class="w">                     </span><span class="n">__func__</span><span class="p">,</span><span class="w"> </span><span class="n">type</span><span class="p">,</span><span class="w"> </span><span class="k">size</span><span class="p">);</span>
 <span class="w">        </span><span class="k">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
 <span class="w">    </span><span class="err">}</span>
@@ -355,6 +382,7 @@
 <span class="w">    </span><span class="err">}</span>
 <span class="err">}</span>
 </code></pre></div>
+
 <p>因为上面的相关逻辑已经进行了一些修改，所以这边也需要进行相关的修改，修改完之后的这个函数如下</p>
 <div class="highlight"><pre><span></span><code><span class="n">void</span><span class="w"> </span><span class="n">pcie_sriov_vf_register_bar</span><span class="p">(</span><span class="n">PCIDevice</span><span class="w"> </span><span class="o">*</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="nc">int</span><span class="w"> </span><span class="n">region_num</span><span class="p">,</span>
 <span class="w">                                </span><span class="n">MemoryRegion</span><span class="w"> </span><span class="o">*</span><span class="n">memory</span><span class="p">)</span>
@@ -374,8 +402,8 @@
 <span class="w">    </span><span class="cm">/*get the bar size */</span>
 <span class="w">    </span><span class="n">bar_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">region</span><span class="o">-&gt;</span><span class="k">size</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">dev</span><span class="o">-&gt;</span><span class="nf">exp</span><span class="p">.</span><span class="n">sriov_pf</span><span class="p">.</span><span class="n">total_vfs</span><span class="p">;</span>
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="err">!</span><span class="n">is_power_of_2</span><span class="p">(</span><span class="k">size</span><span class="p">))</span><span class="w"> </span><span class="err">{</span>
-<span class="w">        </span><span class="n">error_report</span><span class="p">(</span><span class="ss">"%s: PCI region size must be a power"</span>
-<span class="w">                     </span><span class="ss">" of two - type=0x%x, size=0x%"</span><span class="n">FMT_PCIBUS</span><span class="p">,</span>
+<span class="w">        </span><span class="n">error_report</span><span class="p">(</span><span class="ss">&quot;%s: PCI region size must be a power&quot;</span>
+<span class="w">                     </span><span class="ss">&quot; of two - type=0x%x, size=0x%&quot;</span><span class="n">FMT_PCIBUS</span><span class="p">,</span>
 <span class="w">                     </span><span class="n">__func__</span><span class="p">,</span><span class="w"> </span><span class="n">type</span><span class="p">,</span><span class="w"> </span><span class="k">size</span><span class="p">);</span>
 <span class="w">        </span><span class="k">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
 <span class="w">    </span><span class="err">}</span>
@@ -402,47 +430,78 @@
 <span class="w">    </span><span class="n">memory_region_set_enabled</span><span class="p">(</span><span class="n">r</span><span class="o">-&gt;</span><span class="n">memory</span><span class="p">,</span><span class="w"> </span><span class="k">true</span><span class="p">);</span>
 <span class="err">}</span>
 </code></pre></div>
+
 <p>大家可以对比一下这个函数在修改前后的对比。另外，从前端的实现里面可以看到设备初始化会对 vf bar 的相关region resource进行更新， 所以patch里面应该在config write流程里面再加上相应的vf_ioregions更新，这里就不详述了大家可以思考一下。</p>
 <h4>总结</h4>
 <p>上面了花了一些篇幅对sriov的前后端进行了一些分析，希望能对各位看官有些帮助。正如前面所说sriov不是一项新的技术，之前在相关文章也介绍过它的下一代siov。但不可否认sriov依然是截止目前为止所有高性能io虚拟化技术里面使用最简单、最稳定的，所以我觉得大家还是有必要弄清楚他的相关原理。</p>
-<hr/>
-</div>
-<section class="span2" id="article-sidebar">
-<h4>Published</h4>
-<time datetime="2022-06-26T00:00:00+08:00" itemprop="dateCreated"> 6 26, 2022</time>
-<h4>Category</h4>
-<a class="category-link" href="./categories.html#articles-ref">articles</a>
-<h4>Tags</h4>
-<ul class="list-of-tags tags-in-article">
-<li><a href="./tags.html#pcie-ref">pcie
+
+
+             
+ 
+            
+            
+            
+
+
+
+
+
+
+            <hr/>
+        </div>
+        <section id="article-sidebar" class="span2">
+            <h4>Published</h4>
+            <time itemprop="dateCreated" datetime="2022-06-26T00:00:00+08:00"> 6 26, 2022</time>
+            <h4>Category</h4>
+            <a class="category-link" href="./categories.html#articles-ref">articles</a>
+            <h4>Tags</h4>
+            <ul class="list-of-tags tags-in-article">
+                <li><a href="./tags.html#pcie-ref">pcie
                     <span>3</span>
 </a></li>
-<li><a href="./tags.html#sriov-ref">SRIOV
+                <li><a href="./tags.html#sriov-ref">SRIOV
                     <span>1</span>
 </a></li>
-</ul>
-</section>
+            </ul>
+            
+
+
+
+
+
+            
+
+
+
+
+
+        </section>
 </div>
 </article>
-</div>
-<div class="span1"></div>
-</div>
-</div>
-</div>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
 <footer>
-<div id="fpowered">
-        Powered by: <a href="http://getpelican.com/" rel="nofollow noopener noreferrer" target="_blank" title="Pelican Home Page">Pelican</a>
-        Theme: <a href="https://elegant.oncrashreboot.com/" rel="nofollow noopener noreferrer" target="_blank" title="Theme Elegant Home Page">Elegant</a>
-</div>
-</footer> <script src="//code.jquery.com/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
-<script>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>            <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
             function validateForm(query)
             {
                 return (query.length > 0);
             }
         </script>
-<script>
+
+    <script>
     (function () {
         if (window.location.hash.match(/^#comment-\d+$/)) {
             $('#comment_thread').collapse('show');
@@ -465,7 +524,8 @@
         })
     })
 </script>
-</body>
-<!-- Theme: Elegant built for Pelican
+
+    </body>
+    <!-- Theme: Elegant built for Pelican
         License : MIT -->
 </html>

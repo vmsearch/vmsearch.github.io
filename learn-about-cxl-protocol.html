@@ -1,30 +1,36 @@
 <!DOCTYPE html>
-
 <html lang="zh_cn">
-<head>
-<meta charset="utf-8"/>
-<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<meta content="duma" name="author">
-<meta content="article" property="og:type">
-<meta content="summary" name="twitter:card"/>
-<meta content="cxl, cxl device, articles, " name="keywords">
-<meta content="初识cxl协议&amp;cxl device " property="og:title">
-<meta content="./learn-about-cxl-protocol.html" property="og:url"/>
-<meta content="产生背景 作为协议主要发起方，intel在2019年首次提出了cxl协议并联合国内外一众芯片和硬件公司组成了cxl联盟。在cxl协议之前，pcie作为节点设备之间常用的连接协议。cxl的提出主要是希望填补一下pcie在异构计算和分离式数据中心方面的不足。cxl的优势可以总结如下： 提供高效的share mem pool的访问机制 cpu和第三方accelerators之间数据交互更加高效 cxl协议的低时延特性(ns级)让内存拉远成为可能。 与cxl对等的还有ccix和nvlink这两种高效互连协议，这里需要专门说一下 …" property="og:description"/>
-<meta content="kernelnote" property="og:site_name"/>
-<meta content="duma" property="og:article:author"/>
-<meta content="2022-07-16T00:00:00+08:00" property="og:article:published_time"/>
-<meta content="初识cxl协议&amp;cxl device " name="twitter:title"/>
-<meta content="产生背景 作为协议主要发起方，intel在2019年首次提出了cxl协议并联合国内外一众芯片和硬件公司组成了cxl联盟。在cxl协议之前，pcie作为节点设备之间常用的连接协议。cxl的提出主要是希望填补一下pcie在异构计算和分离式数据中心方面的不足。cxl的优势可以总结如下： 提供高效的share mem pool的访问机制 cpu和第三方accelerators之间数据交互更加高效 cxl协议的低时延特性(ns级)让内存拉远成为可能。 与cxl对等的还有ccix和nvlink这两种高效互连协议，这里需要专门说一下 …" name="twitter:description"/>
-<title>初识cxl协议&amp;cxl device  · kernelnote
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="产生背景 作为协议主要发起方，intel在2019年首次提出了cxl协议并联合国内外一众芯片和硬件公司组成了cxl联盟。在cxl协议之前，pcie作为节点设备之间常用的连接协议。cxl的提出主要是希望填补一下pcie在异构计算和分离式数据中心方面的不足。cxl的优势可以总结如下： 提供高效的share mem pool的访问机制 cpu和第三方accelerators之间数据交互更加高效 cxl协议的低时延特性(ns级)让内存拉远成为可能。 与cxl对等的还有ccix和nvlink这两种高效互连协议，这里需要专门说一下 …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="cxl, cxl device, articles, " />
+
+<meta property="og:title" content="初识cxl协议&amp;cxl device "/>
+<meta property="og:url" content="./learn-about-cxl-protocol.html" />
+<meta property="og:description" content="产生背景 作为协议主要发起方，intel在2019年首次提出了cxl协议并联合国内外一众芯片和硬件公司组成了cxl联盟。在cxl协议之前，pcie作为节点设备之间常用的连接协议。cxl的提出主要是希望填补一下pcie在异构计算和分离式数据中心方面的不足。cxl的优势可以总结如下： 提供高效的share mem pool的访问机制 cpu和第三方accelerators之间数据交互更加高效 cxl协议的低时延特性(ns级)让内存拉远成为可能。 与cxl对等的还有ccix和nvlink这两种高效互连协议，这里需要专门说一下 …" />
+<meta property="og:site_name" content="KernelNote - AI基础设施技术博客" />
+<meta property="og:article:author" content="duma" />
+<meta property="og:article:published_time" content="2022-07-16T00:00:00+08:00" />
+<meta name="twitter:title" content="初识cxl协议&amp;cxl device ">
+<meta name="twitter:description" content="产生背景 作为协议主要发起方，intel在2019年首次提出了cxl协议并联合国内外一众芯片和硬件公司组成了cxl联盟。在cxl协议之前，pcie作为节点设备之间常用的连接协议。cxl的提出主要是希望填补一下pcie在异构计算和分离式数据中心方面的不足。cxl的优势可以总结如下： 提供高效的share mem pool的访问机制 cpu和第三方accelerators之间数据交互更加高效 cxl协议的低时延特性(ns级)让内存拉远成为可能。 与cxl对等的还有ccix和nvlink这两种高效互连协议，这里需要专门说一下 …">
+
+        <title>初识cxl协议&amp;cxl device  · KernelNote - AI基础设施技术博客
 </title>
-<link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet"/>
-<link href="./theme/css/elegant.prod.css" media="screen" rel="stylesheet" type="text/css"/>
-<link href="./theme/css/custom.css" media="screen" rel="stylesheet" type="text/css"/>
-<link href="https://kernelnote.com/feeds/all.atom.xml" rel="alternate" title="kernelnote - Full Atom Feed" type="application/atom+xml">
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
 <!-- Global site tag (gtag.js) - Google Analytics -->
-<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
@@ -32,50 +38,57 @@
 
   gtag('config', 'G-LRRMJ08SPD');
 </script>
-</link></meta></meta></meta></meta><link href="https://kernelnote.com/learn-about-cxl-protocol.html" rel="canonical"/><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "kernelnote", "item": "https://kernelnote.com"}, {"@type": "ListItem", "position": 2, "name": "Learn about cxl protocol", "item": "https://kernelnote.com/learn-about-cxl-protocol.html"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "author": {"@type": "Person", "name": "duma"}, "publisher": {"@type": "Organization", "name": "kernelnote"}, "headline": "初识cxl协议&cxl device", "about": "articles", "datePublished": "2022-07-16 00:00"}</script></head>
-<body>
-<div id="content">
-<div class="navbar navbar-static-top">
-<div class="navbar-inner">
-<div class="container-fluid">
-<a class="btn btn-navbar" data-target=".nav-collapse" data-toggle="collapse">
-<span class="icon-bar"></span>
-<span class="icon-bar"></span>
-<span class="icon-bar"></span>
-</a>
-<a class="brand" href="./"><span class="site-name">kernelnote</span></a>
-<div class="nav-collapse collapse">
-<ul class="nav pull-right top-menu">
-<li>
-<a href=".">Home</a>
-</li>
-<li><a href="./pages/about.html">about</a></li>
-<li><a href="./categories.html">Categories</a></li>
-<li><a href="./tags.html">Tags</a></li>
-<li><a href="./archives.html">Archives</a></li>
-<li><form action="./search.html" class="navbar-search" onsubmit="return validateForm(this.elements['q'].value);"> <input class="search-query" id="tipue_search_input" name="q" placeholder="Search" type="text"/></form></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-<div class="container-fluid">
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<article itemscope>
 <div class="row-fluid">
-<div class="span1"></div>
-<div class="span10">
-<article itemscope="">
-<div class="row-fluid">
-<header class="page-header span10 offset2">
-<h1>
-<a href="./learn-about-cxl-protocol.html">
-                初识cxl协议&amp;cxl device
+    <header class="page-header span10 offset2">
+        <h1>
+            <a href="./learn-about-cxl-protocol.html">
+                初识cxl协议&cxl device
             </a>
-</h1>
-</header>
+        </h1>
+    </header>
 </div>
+
 <div class="row-fluid">
-<div class="span8 offset2 article-content">
-<h4>产生背景</h4>
+        <div class="span8 offset2 article-content">
+            
+            <h4>产生背景</h4>
 <p>作为协议主要发起方，intel在2019年首次提出了cxl协议并联合国内外一众芯片和硬件公司组成了cxl联盟。在cxl协议之前，pcie作为节点设备之间常用的连接协议。cxl的提出主要是希望填补一下pcie在异构计算和分离式数据中心方面的不足。cxl的优势可以总结如下：</p>
 <ul>
 <li>
@@ -107,11 +120,12 @@
 </ul>
 </li>
 </ul>
-<p><img alt="cxl_cache_channel" src="images/cxl_cache_channel.png"/>
+<p><img alt="cxl_cache_channel" src="images/cxl_cache_channel.png"></p>
 <center> 图1 cxl.cache channels </center>
-如上图所示，channel之间是相互独立的从而保证了数据高性能传输。另外，cxl cache在每个方向上还定义了相关操作的Opcode，大家如果感兴趣可以去看一下相关的spec。这里以device访问host memory为例展示一下相关的流程：</p>
-<p><img alt="cxl_d2h" src="images/cxl_d2h.png"/>
-<center> 图2 cxl cache device access host memory</center></p>
+<p>如上图所示，channel之间是相互独立的从而保证了数据高性能传输。另外，cxl cache在每个方向上还定义了相关操作的Opcode，大家如果感兴趣可以去看一下相关的spec。这里以device访问host memory为例展示一下相关的流程：</p>
+<p><img alt="cxl_d2h" src="images/cxl_d2h.png"></p>
+<center> 图2 cxl cache device access host memory</center>
+
 <ul>
 <li>
 <p>cxl.mem
@@ -130,13 +144,16 @@
     - Reponse without data(NDR)</p>
 <div class="highlight"><pre><span></span><code>- Repose with Data(RwD)
 </code></pre></div>
+
 <p>交互定义的不同Opcodes，具体如下图所示：</p>
-<p><img alt="cxl_mem_opcode" src="images/cxl_mem_opcode.png"/>
-<center>图3 M2S request memory Opcodes</center></p>
+<p><img alt="cxl_mem_opcode" src="images/cxl_mem_opcode.png"></p>
+<center>图3 M2S request memory Opcodes</center>
+
 <h4>cxl三种设备类型</h4>
 <p>讲完cxl三种协议实现，我们再来看一下cxl支持的三种不同类型设备。为了让大家有一个整体的认知，我们先上一张整体的架构图</p>
-<p><img alt="cxl_device" src="images/cxl_device.png"/>
-<center> 图4 cxl device</center></p>
+<p><img alt="cxl_device" src="images/cxl_device.png"></p>
+<center> 图4 cxl device</center>
+
 <p>结合着上面的图我们来来看一下这三种类型设备的异同点：</p>
 <ul>
 <li>type 1 device</li>
@@ -146,8 +163,9 @@
 <li>type 2 device</li>
 </ul>
 <p>type 2 device 支持 cxl.cache和cxl.mem，一般都会带有 device attached memory如HBM 或者DDR。这类设备使用的场景是host和device之间需要大量的进行内存访问和数据交互比如gpu等。跟传统pcie设备的device attached memory 区别在于，cxl.mem协议下的 device attached memory跟host 主存是统一编址的，host cpu 访问 type 2 device  attached memory跟访问host 主存没有区别。</p>
-<p><img alt="cxl_type2_device" src="images/cxl_type2_device.png"/>
-<center> 图5 type 2 device with attached memory</center></p>
+<p><img alt="cxl_type2_device" src="images/cxl_type2_device.png"></p>
+<center> 图5 type 2 device with attached memory</center>
+
 <p>结合上图的这张图我们来聊一下type 2 当中引入的Bias Based  coherency model，在这种model下。HDM可以有两种状态，分别是 Host Bias和Device Bias。当hdm设置为 Host Bias state时，如果设备要访问 HDM则需要先把request发到Host，再由Host完成相关的操作；当hdm 设置为 device Bias state时设备访问HDM时不需要往host发相关的request，前提是需要device保证host侧没有cache的旧数据。需要注意的是，不管是哪种Bias state对host侧来说这些hdm跟host attached memory 都是统一地址的。为了实现Bias model，需要type 2 device实现以下能力</p>
 <div class="highlight"><pre><span></span><code><span class="o">-</span><span class="w"> </span><span class="err">实现</span><span class="n">Bias</span><span class="w"> </span><span class="n">table来追踪Bias</span><span class="p">(</span><span class="err">中文可以译为偏差</span><span class="p">)</span><span class="err">，粒度需要细化到</span><span class="n">page</span><span class="err">。</span>
 
@@ -155,50 +173,81 @@
 
 <span class="o">-</span><span class="w"> </span><span class="err">支持通过</span><span class="nb">load</span><span class="w"> </span><span class="ow">and</span><span class="w"> </span><span class="n">store指令去访问local的memory</span><span class="err">。</span>
 </code></pre></div>
+
 <ul>
 <li>type 3 device</li>
 </ul>
 <p>该类型的设备只支持cxl.io 和cxl.mem，这种类型的设备一般作为host memory的扩展来使用，因此cache一致性主要是由cpu侧来保障。至于type 3设备跟host cpu进行交互相关机制会在后续的系列当中进行详细说明。另外，type3设备还支持Multi Logical Device(个人理解跟 pcie sriov 比较类似)，每个MLD可以再细出为16个独立的LD(logical device)，LD与LD之间通过LD-ID一个16bit的identifier来区分。</p>
 <h4>总结</h4>
 <p>上面介绍了cxl的协议和设备，cxl给后续的设备与host之间的低时延交互以及内存池化都带来了比较多的想象力。后续的文章，将会给大家讲一下cxl设备的发现和枚举流程。</p>
-<hr/>
-</div>
-<section class="span2" id="article-sidebar">
-<h4>Published</h4>
-<time datetime="2022-07-16T00:00:00+08:00" itemprop="dateCreated"> 7 16, 2022</time>
-<h4>Category</h4>
-<a class="category-link" href="./categories.html#articles-ref">articles</a>
-<h4>Tags</h4>
-<ul class="list-of-tags tags-in-article">
-<li><a href="./tags.html#cxl-ref">cxl
+
+
+             
+ 
+            
+            
+            
+
+
+
+
+
+
+            <hr/>
+        </div>
+        <section id="article-sidebar" class="span2">
+            <h4>Published</h4>
+            <time itemprop="dateCreated" datetime="2022-07-16T00:00:00+08:00"> 7 16, 2022</time>
+            <h4>Category</h4>
+            <a class="category-link" href="./categories.html#articles-ref">articles</a>
+            <h4>Tags</h4>
+            <ul class="list-of-tags tags-in-article">
+                <li><a href="./tags.html#cxl-ref">cxl
                     <span>2</span>
 </a></li>
-<li><a href="./tags.html#cxl-device-ref">cxl device
+                <li><a href="./tags.html#cxl-device-ref">cxl device
                     <span>1</span>
 </a></li>
-</ul>
-</section>
+            </ul>
+            
+
+
+
+
+
+            
+
+
+
+
+
+        </section>
 </div>
 </article>
-</div>
-<div class="span1"></div>
-</div>
-</div>
-</div>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
 <footer>
-<div id="fpowered">
-        Powered by: <a href="http://getpelican.com/" rel="nofollow noopener noreferrer" target="_blank" title="Pelican Home Page">Pelican</a>
-        Theme: <a href="https://elegant.oncrashreboot.com/" rel="nofollow noopener noreferrer" target="_blank" title="Theme Elegant Home Page">Elegant</a>
-</div>
-</footer> <script src="//code.jquery.com/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
-<script>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>            <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
             function validateForm(query)
             {
                 return (query.length > 0);
             }
         </script>
-<script>
+
+    <script>
     (function () {
         if (window.location.hash.match(/^#comment-\d+$/)) {
             $('#comment_thread').collapse('show');
@@ -221,7 +270,8 @@
         })
     })
 </script>
-</body>
-<!-- Theme: Elegant built for Pelican
+
+    </body>
+    <!-- Theme: Elegant built for Pelican
         License : MIT -->
 </html>

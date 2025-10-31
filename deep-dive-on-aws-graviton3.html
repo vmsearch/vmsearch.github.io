@@ -1,30 +1,36 @@
 <!DOCTYPE html>
-
 <html lang="zh_cn">
-<head>
-<meta charset="utf-8"/>
-<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<meta content="duma" name="author">
-<meta content="article" property="og:type">
-<meta content="summary" name="twitter:card"/>
-<meta content="aws, aws graviton3, articles, " name="keywords">
-<meta content="深入解读aws graviton3 " property="og:title">
-<meta content="./deep-dive-on-aws-graviton3.html" property="og:url"/>
-<meta content="序言 继去年发布graviton2之后，今年aws如期发布了graviton3。graviton3在aws数据中心的落地标志着其在自研芯片的道路上又成功的迈进了一大步，同时也标志着其在公有云上的护城河又一次得到了加宽。 aws graviton芯片生态打造 在分析graviton3之前，我们先来看一下aws …" property="og:description"/>
-<meta content="kernelnote" property="og:site_name"/>
-<meta content="duma" property="og:article:author"/>
-<meta content="2021-12-08T22:45:00+08:00" property="og:article:published_time"/>
-<meta content="深入解读aws graviton3 " name="twitter:title"/>
-<meta content="序言 继去年发布graviton2之后，今年aws如期发布了graviton3。graviton3在aws数据中心的落地标志着其在自研芯片的道路上又成功的迈进了一大步，同时也标志着其在公有云上的护城河又一次得到了加宽。 aws graviton芯片生态打造 在分析graviton3之前，我们先来看一下aws …" name="twitter:description"/>
-<title>深入解读aws graviton3  · kernelnote
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="序言 继去年发布graviton2之后，今年aws如期发布了graviton3。graviton3在aws数据中心的落地标志着其在自研芯片的道路上又成功的迈进了一大步，同时也标志着其在公有云上的护城河又一次得到了加宽。 aws graviton芯片生态打造 在分析graviton3之前，我们先来看一下aws …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="aws, aws graviton3, articles, " />
+
+<meta property="og:title" content="深入解读aws graviton3 "/>
+<meta property="og:url" content="./deep-dive-on-aws-graviton3.html" />
+<meta property="og:description" content="序言 继去年发布graviton2之后，今年aws如期发布了graviton3。graviton3在aws数据中心的落地标志着其在自研芯片的道路上又成功的迈进了一大步，同时也标志着其在公有云上的护城河又一次得到了加宽。 aws graviton芯片生态打造 在分析graviton3之前，我们先来看一下aws …" />
+<meta property="og:site_name" content="KernelNote - AI基础设施技术博客" />
+<meta property="og:article:author" content="duma" />
+<meta property="og:article:published_time" content="2021-12-08T22:45:00+08:00" />
+<meta name="twitter:title" content="深入解读aws graviton3 ">
+<meta name="twitter:description" content="序言 继去年发布graviton2之后，今年aws如期发布了graviton3。graviton3在aws数据中心的落地标志着其在自研芯片的道路上又成功的迈进了一大步，同时也标志着其在公有云上的护城河又一次得到了加宽。 aws graviton芯片生态打造 在分析graviton3之前，我们先来看一下aws …">
+
+        <title>深入解读aws graviton3  · KernelNote - AI基础设施技术博客
 </title>
-<link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet"/>
-<link href="./theme/css/elegant.prod.css" media="screen" rel="stylesheet" type="text/css"/>
-<link href="./theme/css/custom.css" media="screen" rel="stylesheet" type="text/css"/>
-<link href="https://kernelnote.com/feeds/all.atom.xml" rel="alternate" title="kernelnote - Full Atom Feed" type="application/atom+xml">
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
 <!-- Global site tag (gtag.js) - Google Analytics -->
-<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
@@ -32,50 +38,57 @@
 
   gtag('config', 'G-LRRMJ08SPD');
 </script>
-</link></meta></meta></meta></meta><link href="https://kernelnote.com/deep-dive-on-aws-graviton3.html" rel="canonical"/><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "kernelnote", "item": "https://kernelnote.com"}, {"@type": "ListItem", "position": 2, "name": "Deep dive on aws graviton3", "item": "https://kernelnote.com/deep-dive-on-aws-graviton3.html"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "author": {"@type": "Person", "name": "duma"}, "publisher": {"@type": "Organization", "name": "kernelnote"}, "headline": "深入解读aws graviton3", "about": "articles", "datePublished": "2021-12-08 22:45"}</script></head>
-<body>
-<div id="content">
-<div class="navbar navbar-static-top">
-<div class="navbar-inner">
-<div class="container-fluid">
-<a class="btn btn-navbar" data-target=".nav-collapse" data-toggle="collapse">
-<span class="icon-bar"></span>
-<span class="icon-bar"></span>
-<span class="icon-bar"></span>
-</a>
-<a class="brand" href="./"><span class="site-name">kernelnote</span></a>
-<div class="nav-collapse collapse">
-<ul class="nav pull-right top-menu">
-<li>
-<a href=".">Home</a>
-</li>
-<li><a href="./pages/about.html">about</a></li>
-<li><a href="./categories.html">Categories</a></li>
-<li><a href="./tags.html">Tags</a></li>
-<li><a href="./archives.html">Archives</a></li>
-<li><form action="./search.html" class="navbar-search" onsubmit="return validateForm(this.elements['q'].value);"> <input class="search-query" id="tipue_search_input" name="q" placeholder="Search" type="text"/></form></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-<div class="container-fluid">
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<article itemscope>
 <div class="row-fluid">
-<div class="span1"></div>
-<div class="span10">
-<article itemscope="">
-<div class="row-fluid">
-<header class="page-header span10 offset2">
-<h1>
-<a href="./deep-dive-on-aws-graviton3.html">
+    <header class="page-header span10 offset2">
+        <h1>
+            <a href="./deep-dive-on-aws-graviton3.html">
                 深入解读aws graviton3
             </a>
-</h1>
-</header>
+        </h1>
+    </header>
 </div>
+
 <div class="row-fluid">
-<div class="span8 offset2 article-content">
-<h3>序言</h3>
+        <div class="span8 offset2 article-content">
+            
+            <h3>序言</h3>
 <p>继去年发布graviton2之后，今年aws如期发布了graviton3。graviton3在aws数据中心的落地标志着其在自研芯片的道路上又成功的迈进了一大步，同时也标志着其在公有云上的护城河又一次得到了加宽。</p>
 <h3>aws graviton芯片生态打造</h3>
 <p>在分析graviton3之前，我们先来看一下aws 在打造graviton生态方面都取得了哪些成果
@@ -106,26 +119,30 @@
 <li>I/O：2  *  PCIe  gen5</li>
 <li>设计工艺：chiplet, 7 silicon die, 5nm</li>
 </ul>
-<p><img alt="Pasted image 20211208094954" src="images/Pasted image 20211208094954.png"/></p>
-<p><center>graviton3 interconnet&amp;system 图 </center></p>
+<p><img alt="Pasted image 20211208094954" src="images/Pasted image 20211208094954.png"></p>
+<center>graviton3 interconnet&system 图 </center>
+
 <p>如上图所示，64 core占用了一个die,  其余的分别是2个die for pcie gen5,  4个die for DDR5 mem controller。</p>
 <p>基于graviton3，aws发布了c7g服务器如下图所示：</p>
-<p><img alt="Pasted image 20211207214854" src="images/Pasted image 20211207214854.png"/>
-<center> 图1</center></p>
+<p><img alt="Pasted image 20211207214854" src="images/Pasted image 20211207214854.png">
+<br>
+<center> 图1</center>
+</p>
 <p>c7g服务器架构如下:
 * no numa架构，无SMT，每个vcpu都是一个physical core
 * 3 sockets/server,  采用一个Nitro card 带3 个graviton 3 sockets, 将传统42U 机架利用率提高50%的同时，也顺便降低了功耗。
 * 8 channel DDR5</p>
-<p><img alt="Pasted image 20211208100455.png" src="images/Pasted image 20211208100455.png"/>
-<center>一带三架构</center></p>
+<p><img alt="Pasted image 20211208100455.png" src="images/Pasted image 20211208100455.png">
+    <center>一带三架构</center></p>
 <p>关于这个一带三架构这里我详细介绍一下，这里的每个sockets其实都一个单路的graviton3服务器。底层实现原理其实也比较简单，每台单路的服务器通过物理link直接跟nitro 卡链接，然后这个link主要是用来传输标准的pcie 协议，使得nitro card能为三台服务器模拟设备。</p>
 <p>其实这种设计并不是aws首创，国外的dpu创业公司fungible 很早就提出了这种设计，只是aws 成功的把这种设计在其数据中心进行了落地。</p>
 <h3>graviton3 背后的设计逻辑</h3>
 <p>1.<strong>gravition3 只提供64 cores，2.6GHZ</strong></p>
 <p>大多数人认为如果要提升 workload的performance，天然就会想到增加服务器cpu的数量以及提升cpu 运行频率。确实，大多数服务器厂商也都是这么做的。比如，不管是intel还是amd都在疯狂的堆core和提高频率，这一点可以从这两家下一代的服务器架构上看出一些端倪。intel的下一代SPR平台最大56C(112HT), 而AMD下一代平台Genoa达到了96C(192HT)，而两者的cpu 运行频率基本都是3.0GHZ以上。</p>
 <p>但是，随着Dennard scaling 定律的失效，当你提升频率的同时cpu功耗也在不断的提高。站在aws角度来看，这并不是他们想要的，他们希望在performance和功耗之间找到一种平衡。那么graviton3是怎么做的呢？答案就是他们把core 做的更wider，也就是说让每个cpu cycle内做更多的工作。</p>
-<p><img alt="Pasted image 20211208143933.png" src="images/Pasted image 20211208143933.png"/>
-<center>图2</center></p>
+<p><img alt="Pasted image 20211208143933.png" src="images/Pasted image 20211208143933.png"></p>
+<center>图2</center>
+
 <p>graviton3 cpu 增强部分如图2所示，具体优化如下：</p>
 <ul>
 <li>取指(Fetch), 译码(decode)，执行(issue, instruction window) 性能翻倍</li>
@@ -142,49 +159,79 @@
 <p>这一点上可能大家都没有想到，这些新的硬件会在AWS 这种云厂商在自研的ARM服务器上提前release出来。其他的硬件服务器厂商基本上都要到2022年才能提供，比如intel SPR以及AMD 的Genoa。其实仔细想想也可以理解，aws这种云厂商主要是有业务驱动的，而其他的硬件厂商都是面向技术驱动的。当然还有一点就是开篇所提到的，graviton3得益于chiplet的设计工艺，使得它能更加快速的推向市场。</p>
 <p>刚才提到了aws是面向业务的芯片设计，在设计graviton3的时候也确实考虑了真实的业务场景。比如现在的很多业务只要你给他更多的内存带宽和更低的内存访问延时他就能跑的很“开心”，因此这也是graviton3上ddr5原因之一。</p>
 <p>另外，graviton3未来面向的场景更多的是HPC和机器学习，这些更多的是以hpc集群或者机器学习集群呈现给用户。这些场景的特点一是东西向node之间interconnect带宽要求很高，另一方面就是这些业务都是吃内存的主。</p>
-<p><img alt="Pasted image 20211208164205" src="images/Pasted image 20211208164205.png"/></p>
+<p><img alt="Pasted image 20211208164205" src="images/Pasted image 20211208164205.png"></p>
 <p>上图是一张aws的HPC超算集群图，从图中可以看到东西向连接带宽已经达到400Gbps，考虑到后面的扩展需求，上pcie gen5就顺理成章了。另外，除了pcie链路的压力，这种高带宽对memory 带宽也同样有压力。不管是RDMA还是DMA，最终都是要跟memory controller打交道，如果你的内存带宽达不到，你使用性能再高的pcie链路也是不行的。</p>
 <p>4.<strong>性能测试</strong></p>
-<p><img alt="Pasted image 20211208165219" src="images/Pasted image 20211208165219.png"/></p>
-<p><img alt="Pasted image 20211208165305.png" src="images/Pasted image 20211208165305.png"/></p>
-<hr/>
-</div>
-<section class="span2" id="article-sidebar">
-<h4>Published</h4>
-<time datetime="2021-12-08T22:45:00+08:00" itemprop="dateCreated">12 8, 2021</time>
-<h4>Category</h4>
-<a class="category-link" href="./categories.html#articles-ref">articles</a>
-<h4>Tags</h4>
-<ul class="list-of-tags tags-in-article">
-<li><a href="./tags.html#aws-ref">aws
+<p><img alt="Pasted image 20211208165219" src="images/Pasted image 20211208165219.png"></p>
+<p><img alt="Pasted image 20211208165305.png" src="images/Pasted image 20211208165305.png"></p>
+
+
+             
+ 
+            
+            
+            
+
+
+
+
+
+
+            <hr/>
+        </div>
+        <section id="article-sidebar" class="span2">
+            <h4>Published</h4>
+            <time itemprop="dateCreated" datetime="2021-12-08T22:45:00+08:00">12 8, 2021</time>
+            <h4>Category</h4>
+            <a class="category-link" href="./categories.html#articles-ref">articles</a>
+            <h4>Tags</h4>
+            <ul class="list-of-tags tags-in-article">
+                <li><a href="./tags.html#aws-ref">aws
                     <span>1</span>
 </a></li>
-<li><a href="./tags.html#aws-graviton3-ref">aws graviton3
+                <li><a href="./tags.html#aws-graviton3-ref">aws graviton3
                     <span>1</span>
 </a></li>
-</ul>
-</section>
+            </ul>
+            
+
+
+
+
+
+            
+
+
+
+
+
+        </section>
 </div>
 </article>
-</div>
-<div class="span1"></div>
-</div>
-</div>
-</div>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
 <footer>
-<div id="fpowered">
-        Powered by: <a href="http://getpelican.com/" rel="nofollow noopener noreferrer" target="_blank" title="Pelican Home Page">Pelican</a>
-        Theme: <a href="https://elegant.oncrashreboot.com/" rel="nofollow noopener noreferrer" target="_blank" title="Theme Elegant Home Page">Elegant</a>
-</div>
-</footer> <script src="//code.jquery.com/jquery.min.js"></script>
-<script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
-<script>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>            <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
             function validateForm(query)
             {
                 return (query.length > 0);
             }
         </script>
-<script>
+
+    <script>
     (function () {
         if (window.location.hash.match(/^#comment-\d+$/)) {
             $('#comment_thread').collapse('show');
@@ -207,7 +254,8 @@
         })
     })
 </script>
-</body>
-<!-- Theme: Elegant built for Pelican
+
+    </body>
+    <!-- Theme: Elegant built for Pelican
         License : MIT -->
 </html>
