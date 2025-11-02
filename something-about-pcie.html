@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh_cn">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="GT/s 和 GBps 分别表示什么 GT/s 是 Giga Transmission per second的缩写，它表示的是原始速率即每秒能够传输多少bits，其数值等于PCIe总线的时钟频率。而GBps表示有效带宽也即每秒能够传输多少数据，它跟原始速率 …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="pci, pcie, articles, " />
+        <title>一文带你了解PCIe相关知识点  · KernelNote - AI基础设施技术博客
+</title>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LRRMJ08SPD');
+</script>
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
+
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
+                一文带你了解PCIe相关知识点
+            </h1>
+
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2021-12-12T15:24:00+08:00">日 12 十二月 2021</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">pci</span>
+                    <span class="article-tag">pcie</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <p><img alt="pcie-para" src="images/Pasted image 20211210163313.png"></p>
+<ul>
+<li>GT/s 和 GBps 分别表示什么</li>
+</ul>
+<p>GT/s 是 Giga Transmission per second的缩写，它表示的是原始速率即每秒能够传输多少bits，其数值等于PCIe总线的时钟频率。而GBps表示有效带宽也即每秒能够传输多少数据，它跟原始速率、编码方案和Lane数量有关。</p>
+<p>说到编码方案目前大概有两种，一种是8b/10b，一种是128b/130b。pcie 1.0 和pcie 2.0用的都是第一种编码方案，而pcie 3.0, 4.0, 5.0 用的都是第二种。第一种编码表示的是在PCIe链路上的10 bit中含有8 bit的有效数据也就是说overhead 为20%，而第二种表示PCIe链路上的130 bit中含有128 bit的有效数据，此时的overhead大小在2%。</p>
+<p>以pcie 5为例，它的原始速率为32GT/s，那么 PCIe5 x 8的传带宽 = 32GT/s * 8 lans * 8 bits-per-byte x 128/130 encoding x 2（双向通信） 那么总带完在63GBps。</p>
+<ul>
+<li>PCIe lane</li>
+</ul>
+<p>PCIe 是全双工的通信总线，一个lane由两对差分信号线，即4根信号线。Lane的数量称为位宽，在一个PCIe cycle，理论上N个lane可同时接收和发送各N个比特信息。</p>
+<p><img alt="What-are-PCIe-Lanes-384x600" src="images/What-are-PCIe-Lanes-384x600.gif"></p>
+<p>为了让大家更好的理解PCIe lane是怎么工作的，我们可以通过一个现实当中的一个场景来做一下类比。 在现实生活当中，lane就当于我们的高架桥上的车道，而在lane上传输的数据就相当于车道上行驶的汽车。lane越多，处理的流量也就越多。但是这个lane的数量不是无限的，它的数量多少取决于cpu和主板芯片组。</p>
+<ul>
+<li>PCIe x 16, x 8 具体表示什么</li>
+</ul>
+<p>大家经常会在Soc 的 spec看到相关的参数，x 后面的数字表示的是lane的数量。目前lane的数量有1、2、4、8、12和16这几种选择。当然目前最高的有32 lanes，而实际当中32的比较少，毕竟 x 16的带宽也足以满足需求。</p>
+<ul>
+<li>pci 和pcie的差异点在哪里</li>
+</ul>
+<p>说到pcie，就不能不说一下他的前辈pci(pci-x)。pci全称是peripheral component interconnect, 作为服务器上的外设之间一个标准的互联协议，intel 在1990年提出并在接下来的15年间得到广泛的应用，比如网卡，声卡还有显卡等都是以pci卡的形式插到到当时的主板上。而pcie 全称peripheral component interconnect express，作为pci的继任者，在2001年由intel发布。</p>
+<p>pci和pcie最大的不同主要是在工作方式上，pci 链路上的数据是以并行模式进行传输的，而pcie则是以串行的方式进行传输的。在设备连接上，每个pci的设备都是直接连接到pci bus上，大家共享整个跟pci bus的连接。而pcie设备则需要通过一个switch来跟bus进行连接，而每个pcie设备的连接都相互独立的。</p>
+<p><img alt="PCI-vs-PCI-Express" src="images/PCI-vs-PCI-Express.jpeg"></p>
+<p>在传输带宽上，pci有32位和64位之分，其工作频率也有两种33MHZ和66MHZ。32位的pci其最大传输带宽分别是133MB/s，266MB/s，而64位 pci工作在66MHZ下的传输带宽在532MB/s。pci的带宽除了跟位数相关还是其工作的频率相关，可能有人会说是不是不断的提高pci工作频率就可以把带宽不断的提升了。而实际上完全不是这样，因为pci以并行模式来传输数据虽然效率高但是由于大家都挤在一个通道上，随着你频率的升高pci链路上数据出错率也不断升高，最终的结果就是通道基本不可用。这也是后来提出pcie的原因。相对于pci，pcie的传输带宽根据pcie协议的版本的不同，lane数量不同，它的传输带宽在250GB/s到数十GB/s之间。</p>
+<p><img alt="Pasted image 20211212144615" src="images/Pasted image 20211212144615.png"></p>
+<p>在兼容性上，pci既不向前兼容也不向后兼容，也就是说你无法将一个版本的pci 设备插到另外一个版本的pci物理插槽上。而在这一点上，pcie就做的非常好，既能向前兼容也能向后兼容。比如，你能把一个pcie gen3的设备插到pcie gen4的物理slot上；同时你也能把一个pcie gen5的设备插到到gen3的物理slot上。</p>
+<ul>
+<li>pcie 5 具体的使用场景在哪里</li>
+</ul>
+<p>在上一篇文章<a href="https://mp.weixin.qq.com/s/U9qbCJOZdUUw2xc4S3mk0A">深入解析aws graviton3</a>基本上也提到了，那就是AI/ML。以自动驾驶为例子，一辆汽车平均每天产生的数据包括图像，各种传感器等大约在4TB左右，而这些数据的计算和处理都需要在不同的计算节点之间进行传输。</p>
+<p>另外一方面， AI/ML的训练模型的规模基本上在3到4个月就会double一下。而这些海量数据和训练模型的快速增长给数据中心的计算架构也带来巨大压力，比如内存访问，计算节点之间的连接的带宽等。这也就很好的说明了为什么aws graviton3里面为什么直接上pcie5了，以pcie 5 x 16为例，最高能支持128GBps的链路带宽，足以满足AI/ML的需求。</p>
+
+                <!-- 图片画廊 -->
+            </main>
+
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">pci</span>
+                    <span class="tag-cloud-item">pcie</span>
+                </div>
+            </div>
+
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">日 12 十二月 2021</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
+
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
+
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
+<footer>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+    </body>
+    <!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>

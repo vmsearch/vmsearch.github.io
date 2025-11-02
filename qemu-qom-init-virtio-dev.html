@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh_cn">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="序言 qemu 的强大不仅在于其能够模拟各种各样的设备如cpu、内存、网卡、磁盘等，而且还在于它精妙的架构模式也称为qemu object model …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="qemu, virtio, articles, " />
+        <title>深入理解qemu QOM之virtio设备初始化  · KernelNote - AI基础设施技术博客
+</title>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LRRMJ08SPD');
+</script>
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
+
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
+                深入理解qemu QOM之virtio设备初始化
+            </h1>
+
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2022-05-16T00:00:00+08:00">一 16 五月 2022</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">qemu</span>
+                    <span class="article-tag">virtio</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <h4>序言</h4>
+<p>qemu 的强大不仅在于其能够模拟各种各样的设备如cpu、内存、网卡、磁盘等，而且还在于它精妙的架构模式也称为qemu object model。这种QOM的编程模式或者说框架使得各个开发者非常方便而且快速的在qemu当中添加各种设备模型，这篇文章就以kvm虚拟化当中最常见的virtio设备为例来讲讲QOM。</p>
+<h4>QOM讲解</h4>
+<p>qom 从本质上来讲它仍然是一个面向对象的编程模式，因为qemu是c语言来实现的，所拟相关的对象载体都是structure。在qemu当中，所有的设备在经过抽象之后都可以看成是一个object，这个object有两个属性：type和objectclass。object和objectclass可以理解为qemu当中所有设备的基类，而type则定义了每种object的相关初始化的具体方式。下面我们来具体看一下type的模板</p>
+<div class="highlight"><pre><span></span><code><span class="n">struct</span><span class="w"> </span><span class="n">TypeImpl</span>
+<span class="err">{</span>
+<span class="w">    </span><span class="n">const</span><span class="w"> </span><span class="nc">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">size_t</span><span class="w"> </span><span class="n">class_size</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">size_t</span><span class="w"> </span><span class="n">instance_size</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">class_init</span><span class="p">)(</span><span class="n">ObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">,</span><span class="w"> </span><span class="n">void</span><span class="w"> </span><span class="o">*</span><span class="k">data</span><span class="p">);</span>
+<span class="w">    </span><span class="n">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">class_base_init</span><span class="p">)(</span><span class="n">ObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">,</span><span class="w"> </span><span class="n">void</span><span class="w"> </span><span class="o">*</span><span class="k">data</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">void</span><span class="w"> </span><span class="o">*</span><span class="n">class_data</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">instance_init</span><span class="p">)(</span><span class="k">Object</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="w">    </span><span class="n">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">instance_post_init</span><span class="p">)(</span><span class="k">Object</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+<span class="w">    </span><span class="n">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">instance_finalize</span><span class="p">)(</span><span class="k">Object</span><span class="w"> </span><span class="o">*</span><span class="n">obj</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">bool</span><span class="w"> </span><span class="n">abstract</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">const</span><span class="w"> </span><span class="nc">char</span><span class="w"> </span><span class="o">*</span><span class="n">parent</span><span class="p">;</span>
+<span class="w">    </span><span class="n">TypeImpl</span><span class="w"> </span><span class="o">*</span><span class="n">parent_type</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">ObjectClass</span><span class="w"> </span><span class="o">*</span><span class="k">class</span><span class="p">;</span>
+
+<span class="w">    </span><span class="nc">int</span><span class="w"> </span><span class="n">num_interfaces</span><span class="p">;</span>
+<span class="w">    </span><span class="n">InterfaceImpl</span><span class="w"> </span><span class="n">interfaces</span><span class="o">[</span><span class="n">MAX_INTERFACES</span><span class="o">]</span><span class="p">;</span>
+<span class="err">}</span><span class="p">;</span>
+</code></pre></div>
+
+<p>qemu当中设备的实现，从本质上来讲就是实现该设备的type当中如上所示的相关callback函数，以及定义该设备具体的instance(object的子类)和class(objectclass的子类)，另外从上面也可以看到每个type也都会有自己的parent。如果只是基于这些，可能各位看官在认知上还是比较模糊。那下面我们以virtio-net设备为例，看看它是如何通过QOM这个架构初始化起来的。</p>
+<h4>QOM class和instance初始化</h4>
+<p>首先如果要使用virtio-net则在qemu命令行里需要加入如下opts sample:</p>
+<div class="highlight"><pre><span></span><code><span class="o">-</span><span class="nx">device</span><span class="w"> </span><span class="nx">virtio</span><span class="o">-</span><span class="nx">net</span><span class="o">-</span><span class="nx">pci</span><span class="p">,</span><span class="nx">netdev</span><span class="p">=</span><span class="nx">xx</span><span class="p">,</span><span class="nx">mac</span><span class="p">=</span><span class="nx">xx</span><span class="p">,</span><span class="nx">bus</span><span class="p">=</span><span class="nx">pci</span><span class="m m-Double">.0</span><span class="p">,</span><span class="kd">addr</span><span class="p">=</span><span class="nx">xx</span>
+</code></pre></div>
+
+<p>然后在 qemu main的函数当中通过如下逻辑对相关的device进行初始化</p>
+<div class="highlight"><pre><span></span><code>qemu_opts_foreach(qemu_find_opts(&quot;device&quot;),
+                      device_init_func, NULL, &amp;error_fatal);
+</code></pre></div>
+
+<p>接着通过<code>device_init_func-&gt;qdev_device_add</code> 这个调用栈来进行设备初始化。下面我们看一下<code>qdev_device_add</code>的核心的逻辑</p>
+<div class="highlight"><pre><span></span><code><span class="n">DeviceClass</span><span class="w"> </span><span class="o">*</span><span class="n">dc</span><span class="p">;</span>
+<span class="k">const</span><span class="w"> </span><span class="nb">char</span><span class="w"> </span><span class="o">*</span><span class="n">driver</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="n">path</span><span class="p">;</span>
+<span class="n">DeviceState</span><span class="w"> </span><span class="o">*</span><span class="n">dev</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NULL</span><span class="p">;</span>
+<span class="n">BusState</span><span class="w"> </span><span class="o">*</span><span class="n">bus</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NULL</span><span class="p">;</span>
+<span class="o">......</span><span class="w"> </span>
+
+<span class="n">driver</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">qemu_opt_get</span><span class="p">(</span><span class="n">opts</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;driver&quot;</span><span class="p">);</span>
+
+<span class="o">......</span>
+
+<span class="w"> </span><span class="n">dc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">qdev_get_device_class</span><span class="p">(</span><span class="o">&amp;</span><span class="n">driver</span><span class="p">,</span><span class="w"> </span><span class="n">errp</span><span class="p">);</span>
+
+<span class="o">........</span>
+<span class="n">path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">qemu_opt_get</span><span class="p">(</span><span class="n">opts</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;bus&quot;</span><span class="p">);</span>
+<span class="o">.......</span>
+
+<span class="w"> </span><span class="o">/*</span><span class="w"> </span><span class="n">create</span><span class="w"> </span><span class="n">device</span><span class="w"> </span><span class="o">*/</span>
+<span class="n">dev</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DEVICE</span><span class="p">(</span><span class="n">object_new</span><span class="p">(</span><span class="n">driver</span><span class="p">));</span>
+
+<span class="o">.......</span>
+</code></pre></div>
+
+<p>我们先列举一部分核心实现，这里的driver就是上面的<code>virtio-net-pci</code>。为了更好的来说明后面的逻辑我们先把<code>virtio-net-pci</code>的type，instance， class各自的关联描述一下。</p>
+<ul>
+<li>type</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nb">----------------------------------------------------------------------------</span><span class="nv">&gt;</span><span class="c">parent</span>
+<span class="c">TYPE_VIRTIO_NET_PCI</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">TYPE_VIRTIO_PCI</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">TYPE_PCI_DEVICE</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">TYPE_DEVICE</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">TYPE_OBJECT</span>
+</code></pre></div>
+
+<p>上面的每一种type都会调用相应的type注册函数，将所应的type info注册到qemu的<code>MODULE_INIT_QOM</code> 的qlist当中。还是以<code>virtio-net-pci</code> 为例子</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">VirtioPCIDeviceTypeInfo</span><span class="w"> </span><span class="n">virtio_net_pci_info</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="o">.</span><span class="n">base_name</span><span class="w">             </span><span class="o">=</span><span class="w"> </span><span class="n">TYPE_VIRTIO_NET_PCI</span><span class="p">,</span>
+<span class="w">    </span><span class="o">.</span><span class="n">generic_name</span><span class="w">          </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;virtio-net-pci&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="o">.</span><span class="n">transitional_name</span><span class="w">     </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;virtio-net-pci-transitional&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="o">.</span><span class="n">non_transitional_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;virtio-net-pci-non-transitional&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="o">.</span><span class="n">instance_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sizeof</span><span class="p">(</span><span class="n">VirtIONetPCI</span><span class="p">),</span>
+<span class="w">    </span><span class="o">.</span><span class="n">instance_init</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">virtio_net_pci_instance_init</span><span class="p">,</span>
+<span class="w">    </span><span class="o">.</span><span class="n">class_init</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="n">virtio_net_pci_class_init</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="k">static</span><span class="w"> </span><span class="nb nb-Type">void</span><span class="w"> </span><span class="n">virtio_net_pci_register</span><span class="p">(</span><span class="nb nb-Type">void</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">virtio_pci_types_register</span><span class="p">(</span><span class="o">&amp;</span><span class="n">virtio_net_pci_info</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>通过virtio_net_pci_register来进行信息注册，然后最终会调用 <code>type_init(virtio_net_pci_register)</code> 初始化这个注册。这个<code>type_init</code>函数相当关键，其具体实现如下：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">#define type_init(function) module_init(function, MODULE_INIT_QOM)</span>
+
+<span class="c1">#define module_init(function, type)                                         \</span>
+<span class="k">static</span><span class="w"> </span><span class="nb nb-Type">void</span><span class="w"> </span><span class="n">__attribute__</span><span class="p">((</span><span class="n">constructor</span><span class="p">))</span><span class="w"> </span><span class="n">do_qemu_init_</span><span class="w"> </span><span class="c1">## function(void)    \</span>
+<span class="p">{</span><span class="w">                                                                           </span>\
+<span class="w">    </span><span class="n">register_module_init</span><span class="p">(</span><span class="n">function</span><span class="p">,</span><span class="w"> </span><span class="n">type</span><span class="p">);</span><span class="w">                                   </span>\
+<span class="p">}</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="n">ModuleTypeList</span><span class="w"> </span><span class="o">*</span><span class="n">find_type</span><span class="p">(</span><span class="n">module_init_type</span><span class="w"> </span><span class="n">type</span><span class="p">)</span>
+<span class="err">{</span>
+<span class="w">    </span><span class="n">init_lists</span><span class="p">();</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="n">init_type_list</span><span class="o">[</span><span class="n">type</span><span class="o">]</span><span class="p">;</span>
+<span class="err">}</span>
+
+<span class="n">void</span><span class="w"> </span><span class="n">register_module_init</span><span class="p">(</span><span class="n">void</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">fn</span><span class="p">)(</span><span class="n">void</span><span class="p">),</span><span class="w"> </span><span class="n">module_init_type</span><span class="w"> </span><span class="n">type</span><span class="p">)</span>
+<span class="err">{</span>
+<span class="w">    </span><span class="n">ModuleEntry</span><span class="w"> </span><span class="o">*</span><span class="n">e</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ModuleTypeList</span><span class="w"> </span><span class="o">*</span><span class="n">l</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">e</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">g_malloc0</span><span class="p">(</span><span class="n">sizeof</span><span class="p">(</span><span class="o">*</span><span class="n">e</span><span class="p">));</span>
+<span class="w">    </span><span class="n">e</span><span class="o">-&gt;</span><span class="n">init</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">fn</span><span class="p">;</span>
+<span class="w">    </span><span class="n">e</span><span class="o">-&gt;</span><span class="n">type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">type</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">l</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">find_type</span><span class="p">(</span><span class="n">type</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">QTAILQ_INSERT_TAIL</span><span class="p">(</span><span class="n">l</span><span class="p">,</span><span class="w"> </span><span class="n">e</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">);</span>
+<span class="err">}</span>
+</code></pre></div>
+
+<p><strong>在c语言里面，通过<code>__attribute__((constructor)</code> 来修饰的代码是可以在main函数运行之前执行的，也就是说在qemu main函数相关逻辑之前会完成所有type在QOM list上的注册。然后通过下面的调用栈完成所有type 的具体注册逻辑(包含了type的创建)</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="nx">qemu_init</span><span class="o">-&gt;</span><span class="nx">module_call_init</span><span class="o">-&gt;</span><span class="nx">virtio_net_pci_register</span><span class="o">-&gt;</span><span class="nx">type_register</span>
+<span class="w">                                                        </span><span class="o">-&gt;</span><span class="nx">type_register_internal</span>
+<span class="w">                                                            </span><span class="o">-&gt;</span><span class="nx">type_new</span>
+</code></pre></div>
+
+<ul>
+<li>instance</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nb">-----------------------------------------</span><span class="c">包含</span><span class="nb">----------------------</span><span class="nv">&gt;</span>
+<span class="c">VirtIONetPCI</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">VirtIOPCIProxy</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">PCIDevice</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">DeviceState</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">Object</span>
+</code></pre></div>
+
+<ul>
+<li>class</li>
+</ul>
+<p>关于class这一块，需要注意的是如果子type没有具体的类则直接使用 parent type的class。</p>
+<div class="highlight"><pre><span></span><code><span class="n">VirtioPCIClass</span><span class="o">-&gt;</span><span class="n">PCIDeviceClass</span><span class="o">-&gt;</span><span class="n">DeviceClass</span><span class="o">-&gt;</span><span class="n">ObjectClass</span>
+</code></pre></div>
+
+<p>理完以上的逻辑关系之后，我们接着相关的实现往下走：</p>
+<div class="highlight"><pre><span></span><code>dc = qdev_get_device_class(&amp;driver, errp);
+</code></pre></div>
+
+<p>有了上面的先验知识这个函数看起来就比较容易，其核心逻辑就是<strong>通过driver这里是virtio-net-pci找到其所属的type，然后对type进行初始化并返回这个type的class。这里重点讲一下<code>type_initialize</code>，它采用的是循环嵌套逻辑先初始化完成的父类之后才实现最终的子类。这里的初始化主要<code>class_init</code> 和<code>class_base_init</code>。而且会把初始完的父类的内容赋给子类</strong>，具体赋值逻辑在</p>
+<div class="highlight"><pre><span></span><code><span class="n">memcpy</span><span class="p">(</span><span class="n">ti</span><span class="o">-&gt;</span><span class="n">class</span><span class="p">,</span><span class="w"> </span><span class="n">parent</span><span class="o">-&gt;</span><span class="n">class</span><span class="p">,</span><span class="w"> </span><span class="n">parent</span><span class="o">-&gt;</span><span class="n">class_size</span><span class="p">);</span>
+</code></pre></div>
+
+<p><strong>注意，上面也提到如果子type里面没有设置具体的class，则子type的class_init的input就是其parent type的class，所以parent type的class_init里面所做的一些初始化赋值可能会在子type的class_init函数被覆盖</strong>。接着<code>qdev_device_add</code> 核心逻辑来到</p>
+<div class="highlight"><pre><span></span><code>dev = DEVICE(object_new(driver))
+</code></pre></div>
+
+<p>先看object_new这个函数，其具体的调用链如下</p>
+<div class="highlight"><pre><span></span><code><span class="nx">object_new</span><span class="o">-&gt;</span><span class="nx">object_new_with_type</span><span class="o">-&gt;</span><span class="nx">type_initialize</span>
+<span class="w">                                </span><span class="o">-&gt;</span><span class="nx">object_initialize_with_type</span>
+</code></pre></div>
+
+<p><code>type_initialize</code> 在 get device class的已经执行过，所以最终实现的核心逻辑在<code>object_initialize_with_type</code> 。在这个函数当中也是通过循环嵌套的方式来调用<code>instance_init</code> 和 <code>instance_post_init</code>。</p>
+<h4>virtio-net realized</h4>
+<p>virtio-net设备实例化的完成是通过<code>qdev_device_add</code> 当中的这个函数来触发的</p>
+<div class="highlight"><pre><span></span><code>object_property_set_bool(OBJECT(dev), true, &quot;realized&quot;, &amp;err)
+</code></pre></div>
+
+<p>先来看一下这个函数的具体的调用链</p>
+<div class="highlight"><pre><span></span><code><span class="n">object_property_set_bool</span><span class="o">-&gt;</span><span class="n">object_property_set_qobject</span><span class="o">-&gt;</span><span class="n">object_property_set</span>
+
+<span class="o">-&gt;</span><span class="n">object_property_find</span><span class="o">-&gt;</span><span class="n">object_class_property_find</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="n">ObjectProperty</span><span class="w"> </span><span class="o">*</span><span class="n">object_class_property_find</span><span class="p">(</span><span class="n">ObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="nb">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">,</span>
+<span class="w">                                           </span><span class="n">Error</span><span class="w"> </span><span class="o">**</span><span class="n">errp</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">ObjectProperty</span><span class="w"> </span><span class="o">*</span><span class="n">prop</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">parent_klass</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">parent_klass</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">object_class_get_parent</span><span class="p">(</span><span class="n">klass</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">parent_klass</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">prop</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">object_class_property_find</span><span class="p">(</span><span class="n">parent_klass</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">NULL</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">prop</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">prop</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">prop</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">g_hash_table_lookup</span><span class="p">(</span><span class="n">klass</span><span class="o">-&gt;</span><span class="n">properties</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">prop</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">error_setg</span><span class="p">(</span><span class="n">errp</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Property &#39;.</span><span class="si">%s</span><span class="s2">&#39; not found&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">prop</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>从上面的实现逻辑来看，依然是循环嵌套逻辑从子类一直到父类，直到找到有设置过name为"realized" 特性的类。通过走读代码可以发现在<code>DeviceClass</code> 的 <code>class_init</code> 函数实现里面是有设置过的，具体如下</p>
+<div class="highlight"><pre><span></span><code><span class="n">device_class_init</span><span class="o">-&gt;</span>
+<span class="w">    </span><span class="n">object_class_property_add_bool</span><span class="p">(</span><span class="n">class</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;realized&quot;</span><span class="p">,</span>
+<span class="w">                                   </span><span class="n">device_get_realized</span><span class="p">,</span><span class="w"> </span><span class="n">device_set_realized</span><span class="p">,</span>
+<span class="w">                                   </span><span class="o">&amp;</span><span class="n">error_abort</span><span class="p">);</span>
+</code></pre></div>
+
+<p>因此实现逻辑会直接调用到<code>device_set_realized</code>，这个函数当中调用的核心实现为</p>
+<div class="highlight"><pre><span></span><code>DeviceClass *dc = DEVICE_GET_CLASS(dev);
+
+......
+
+dc-&gt;realize(dev, &amp;local_err);
+.......
+</code></pre></div>
+
+<p>再来分析一下这个realize callback具体的实现。再次走读相关的代码，可以发现相关的realize 赋值有两处：一处是在<code>PCIDeviceClass</code>  的 <code>class_init</code> 函数</p>
+<div class="highlight"><pre><span></span><code><span class="nx">static</span><span class="w"> </span><span class="nx">void</span><span class="w"> </span><span class="nx">pci_device_class_init</span><span class="p">(</span><span class="nx">ObjectClass</span><span class="w"> </span><span class="o">*</span><span class="nx">klass</span><span class="p">,</span><span class="w"> </span><span class="nx">void</span><span class="w"> </span><span class="o">*</span><span class="nx">data</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="nx">DeviceClass</span><span class="w"> </span><span class="o">*</span><span class="nx">k</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">DEVICE_CLASS</span><span class="p">(</span><span class="nx">klass</span><span class="p">);</span>
+
+<span class="w">    </span><span class="nx">k</span><span class="o">-&gt;</span><span class="nx">realize</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">pci_qdev_realize</span><span class="p">;</span><span class="w">   </span><span class="c1">//realize函数</span>
+<span class="w">    </span><span class="nx">k</span><span class="o">-&gt;</span><span class="nx">unrealize</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">pci_qdev_unrealize</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">k</span><span class="o">-&gt;</span><span class="nx">bus_type</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">TYPE_PCI_BUS</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">device_class_set_props</span><span class="p">(</span><span class="nx">k</span><span class="p">,</span><span class="w"> </span><span class="nx">pci_props</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>另外一处在 <code>VirtioPCIClass</code> 的<code>class_init</code> 处</p>
+<div class="highlight"><pre><span></span><code><span class="n">static</span> <span class="n">void</span> <span class="n">virtio_pci_class_init</span><span class="p">(</span><span class="n">ObjectClass</span> <span class="o">*</span><span class="n">klass</span><span class="p">,</span> <span class="n">void</span> <span class="o">*</span><span class="n">data</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">DeviceClass</span> <span class="o">*</span><span class="n">dc</span> <span class="o">=</span> <span class="n">DEVICE_CLASS</span><span class="p">(</span><span class="n">klass</span><span class="p">);</span>
+    <span class="n">PCIDeviceClass</span> <span class="o">*</span><span class="n">k</span> <span class="o">=</span> <span class="n">PCI_DEVICE_CLASS</span><span class="p">(</span><span class="n">klass</span><span class="p">);</span>
+    <span class="n">VirtioPCIClass</span> <span class="o">*</span><span class="n">vpciklass</span> <span class="o">=</span> <span class="n">VIRTIO_PCI_CLASS</span><span class="p">(</span><span class="n">klass</span><span class="p">);</span>
+
+    <span class="n">device_class_set_props</span><span class="p">(</span><span class="n">dc</span><span class="p">,</span> <span class="n">virtio_pci_properties</span><span class="p">);</span>
+    <span class="n">k</span><span class="o">-&gt;</span><span class="n">realize</span> <span class="o">=</span> <span class="n">virtio_pci_realize</span><span class="p">;</span>
+    <span class="n">k</span><span class="o">-&gt;</span><span class="n">exit</span> <span class="o">=</span> <span class="n">virtio_pci_exit</span><span class="p">;</span>
+    <span class="n">k</span><span class="o">-&gt;</span><span class="n">vendor_id</span> <span class="o">=</span> <span class="n">PCI_VENDOR_ID_REDHAT_QUMRANET</span><span class="p">;</span>
+    <span class="n">k</span><span class="o">-&gt;</span><span class="n">revision</span> <span class="o">=</span> <span class="n">VIRTIO_PCI_ABI_VERSION</span><span class="p">;</span>
+    <span class="n">k</span><span class="o">-&gt;</span><span class="n">class_id</span> <span class="o">=</span> <span class="n">PCI_CLASS_OTHERS</span><span class="p">;</span>
+    <span class="n">device_class_set_parent_realize</span><span class="p">(</span><span class="n">dc</span><span class="p">,</span> <span class="n">virtio_pci_dc_realize</span><span class="p">,</span>
+                                    <span class="o">&amp;</span><span class="n">vpciklass</span><span class="o">-&gt;</span><span class="n">parent_dc_realize</span><span class="p">);</span> <span class="o">//</span>
+    <span class="n">dc</span><span class="o">-&gt;</span><span class="n">reset</span> <span class="o">=</span> <span class="n">virtio_pci_reset</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>device_class_set_parent_realize</code>  的核心逻辑是将dc 的realize赋值为 <code>virtio_pci_dc_realize</code> ，然后将<code>vpciklass-&gt;parent_dc_realize</code>  设置为dc的初始值即<code>pci_qdev_realize</code> 。</p>
+<div class="highlight"><pre><span></span><code>static void virtio_pci_dc_realize(DeviceState <span class="gs">*qdev, Error *</span>*errp)
+{
+    VirtioPCIClass *vpciklass = VIRTIO_PCI_GET_CLASS(qdev);
+    VirtIOPCIProxy *proxy = VIRTIO_PCI(qdev);
+    PCIDevice *pci_dev = &amp;proxy-&gt;pci_dev;
+
+    if (!(proxy-&gt;flags &amp; VIRTIO_PCI_FLAG_DISABLE_PCIE) &amp;&amp;
+        virtio_pci_modern(proxy)) {
+        pci_dev-&gt;cap_present |= QEMU_PCI_CAP_EXPRESS;
+    }
+
+    vpciklass-&gt;parent_dc_realize(qdev, errp);
+}
+</code></pre></div>
+
+<p>由于父类初始化在前子类初始化在后(子类覆盖了父类的实现)，因此 <code>virtio-net</code> 实例化的调用链到目前为止如下所示</p>
+<div class="highlight"><pre><span></span><code><span class="n">device_set_realized</span><span class="o">-&gt;</span><span class="n">virtio_pci_dc_realize</span><span class="o">-&gt;</span><span class="n">pci_qdev_realize</span>
+</code></pre></div>
+
+<p>接着往下看pci_qdev_realize的核心实现</p>
+<div class="highlight"><pre><span></span><code><span class="n">static</span><span class="w"> </span><span class="k">void</span><span class="w"> </span><span class="n">pci_qdev_realize</span><span class="p">(</span><span class="n">DeviceState</span><span class="w"> </span><span class="o">*</span><span class="n">qdev</span><span class="p">,</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="o">**</span><span class="n">errp</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">PCIDevice</span><span class="w"> </span><span class="o">*</span><span class="n">pci_dev</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">PCIDevice</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">qdev</span><span class="p">;</span>
+<span class="w">    </span><span class="n">PCIDeviceClass</span><span class="w"> </span><span class="o">*</span><span class="n">pc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PCI_DEVICE_GET_CLASS</span><span class="p">(</span><span class="n">pci_dev</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ObjectClass</span><span class="w"> </span><span class="o">*</span><span class="n">klass</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OBJECT_CLASS</span><span class="p">(</span><span class="n">pc</span><span class="p">);</span>
+
+<span class="w">    </span><span class="p">......</span>
+
+<span class="w">   </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">pc</span><span class="o">-&gt;</span><span class="n">realize</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">pc</span><span class="o">-&gt;</span><span class="n">realize</span><span class="p">(</span><span class="n">pci_dev</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">local_err</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">local_err</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">error_propagate</span><span class="p">(</span><span class="n">errp</span><span class="p">,</span><span class="w"> </span><span class="n">local_err</span><span class="p">);</span>
+<span class="w">            </span><span class="n">do_pci_unregister_device</span><span class="p">(</span><span class="n">pci_dev</span><span class="p">);</span>
+<span class="w">            </span><span class="k">return</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="p">.......</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>上面的实现当中调用了 <code>PCIDeviceClass</code> 的 <code>realize</code> ， 它的初始化是在 <code>VirtioPCIClass</code> 的 <code>class_init</code> 初始化的</p>
+<div class="highlight"><pre><span></span><code><span class="n">k</span><span class="o">-&gt;</span><span class="n">realize</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">virtio_pci_realize</span><span class="p">;</span>
+</code></pre></div>
+
+<p>接着看<code>virtio_pci_realize</code> 的具体实现</p>
+<div class="highlight"><pre><span></span><code>static void virtio_pci_realize(PCIDevice <span class="gs">*pci_dev, Error *</span>*errp)
+{
+    VirtIOPCIProxy *proxy = VIRTIO_PCI(pci_dev);
+    VirtioPCIClass *k = VIRTIO_PCI_GET_CLASS(pci_dev);
+    Error *local_err = NULL;
+    .......
+
+    if (k-&gt;realize) {
+        k-&gt;realize(proxy, &amp;local_err);
+        if (local_err) {
+            goto out;
+        }
+    }
+
+    .......
+}
+</code></pre></div>
+
+<p>其调用的是<code>VirtioPCIClass</code> 的 <code>realize</code> 实现，而这个函数的赋值是在<code>virtio_net_pci_class_init</code>  里面完成的，其callback为<code>virtio_net_pci_realize</code> 。</p>
+<div class="highlight"><pre><span></span><code>static void virtio_net_pci_realize(VirtIOPCIProxy <span class="gs">*vpci_dev, Error *</span>*errp)
+{
+    DeviceState *qdev = DEVICE(vpci_dev);
+    VirtIONetPCI *dev = VIRTIO_NET_PCI(vpci_dev);
+    DeviceState *vdev = DEVICE(&amp;dev-&gt;vdev);
+    PCIDevice *pci_dev = &amp;vpci_dev-&gt;pci_dev;
+    VirtIONet *net = &amp;dev-&gt;vdev;
+
+    ......
+
+    object_property_set_bool(OBJECT(vdev), &quot;realized&quot;, true, errp);
+
+    .......
+}
+</code></pre></div>
+
+<p>又看到这个比较熟悉的函数了<code>object_property_set_bool</code>， 先来看这个vdev也就是 <code>VirtIONet</code>  相关QOM结构。</p>
+<ul>
+<li>type</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nb">------------------------------------------------------------------------</span><span class="nv">&gt;</span><span class="c">parent</span>
+<span class="c">TYPE_VIRTIO_NET</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">TYPE_VIRTIO_DEVICE</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">TYPE_DEVICE</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">TYPE_OBJECT</span>
+</code></pre></div>
+
+<ul>
+<li>class</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nb">----------------------------------------------------------------</span><span class="nv">&gt;</span>
+<span class="c">VirtioDeviceClass</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">DeviceClass</span><span class="nb">-</span><span class="nv">&gt;</span><span class="c">ObjectClass</span>
+</code></pre></div>
+
+<ul>
+<li>instance</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="o">----------------------------------------------------------&gt;</span><span class="err">包含</span>
+<span class="n">VirtIONet</span><span class="o">-&gt;</span><span class="n">VirtIODevice</span><span class="o">-&gt;</span><span class="n">DeviceState</span><span class="o">-&gt;</span><span class="n">Object</span>
+</code></pre></div>
+
+<p>在 <code>object_property_set_bool</code> 的具体实现当中会对上面所列举的class进行init，那instance是在哪里init的呢？如果你仔细的阅读过<code>virtio-net-pci</code> 相关初始化代码，你会发现它是在这里面完成的：</p>
+<div class="highlight"><pre><span></span><code><span class="n">virtio_net_pci_instance_init</span><span class="o">-&gt;</span><span class="n">virtio_instance_init_common</span><span class="o">-&gt;</span><span class="n">object_initialize_child</span><span class="o">-&gt;</span><span class="n">object_initialize</span>
+</code></pre></div>
+
+<p>理清virtio-net的class和instance的初始化之后，接着看<code>realize</code> 函数的调用。其入口还是在<code>device_set_realized</code> 函数，紧接着它会调用<code>dc-&gt;realize</code> 函数即<code>virtio_device_realize</code> ，然后会再调到<code>VirtioDeviceClass</code>的具体实现函数即<code>vdc-&gt;realize</code>具体函数为<code>virtio_net_device_realize</code> 。故整体调用链如下</p>
+<div class="highlight"><pre><span></span><code><span class="n">device_set_realized</span><span class="o">-&gt;</span><span class="n">virtio_device_realize</span><span class="o">-&gt;</span><span class="n">virtio_net_device_realize</span>
+</code></pre></div>
+
+<h4>总结</h4>
+<p>qemu QOM的虽然精妙，但是理解和分析起来确实不太容易。建议大家仔细品一下上面的分析。同时，为了让大家更好的更好理解QOM，后续也会有更多这方面的文章分享给大家。</p>
+
+                <!-- 图片画廊 -->
+            </main>
+
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">qemu</span>
+                    <span class="tag-cloud-item">virtio</span>
+                </div>
+            </div>
+
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">一 16 五月 2022</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
+
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
+
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
+<footer>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+    </body>
+    <!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>

@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh_cn">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="硬件架构 为了让大家对iommu有个直观的认识，我们先从硬件架构上看一下iommu是个什么东东。 图1 如上图所示，iommu就是上图所展示的DMA Remapping Unit，通常一台硬件服务器上会有多个DMA Remapping …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="iommu, articles, " />
+        <title>深入了解iommu系列一：iommu硬件架构和驱动初始化  · KernelNote - AI基础设施技术博客
+</title>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LRRMJ08SPD');
+</script>
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
+
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
+                深入了解iommu系列一：iommu硬件架构和驱动初始化
+            </h1>
+
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2022-01-18T20:14:00+08:00">二 18 一月 2022</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">iommu</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <h4>硬件架构</h4>
+<p>为了让大家对iommu有个直观的认识，我们先从硬件架构上看一下iommu是个什么东东。</p>
+<p><img alt="iommu" src="images/iommu.png">
+<center>图1 </center></p>
+<p>如上图所示，iommu就是上图所展示的DMA Remapping Unit，通常一台硬件服务器上会有多个DMA Remapping Unit，它下面可以对接pcie设备，也可以对接ioapic, HPET设备。在后面的行文当中统一简称为DMAR，通常DMA Remapping Unit集成在Root Complex当中，系统当中所有的外设的DMA操作理论上都要经过DMAR(例外就是在p2p通信的场景下且pcie switch 开了ATS功能那就不用再到DMAR转一圈了)。下图展示了一个pci设备在有iommu的场景下其进行一次read dma操作的相关流程。</p>
+<p><img alt="mem_read" src="images/mem_read.png">
+<center>图2 </center></p>
+<p>在虚拟化出现之前， iommu硬件主要功能就是将iova转换成hpa，它的出现主要解决了两个问题。一个是<strong>让只有32位DMA能力的设备能够访问大于4G以上的内存地址空间</strong>，这个带来的收益是什么呢？举个例子，假如你的系统有6G的内存，你挂了一个32位DMA能力的外设，如果你在驱动里面分配了一个在4G以上的buffer，这个时候由于硬件不能直接dma这个buffer，因此你需要在低于4G的空间分配一个tmp buffer让硬件先把数据dma到这个tmp buffer上，然后你再从这个tmp buffer把数据copy到你的dst buffer上。你看这样一来二去效率就变的极为低下，而且对开发者来说也非常的不友好。如果有了iommu这个事情就比较好解决，直接把iova映射这个dst buffer上就解决了。</p>
+<p>引入iommu的另外一个收益就是可以把<strong>多个分散的dma操作聚合成一个连续的DMA操作</strong>。举个例子，驱动程序可能分配两个大小为4KB的且在物理内存地址上不连续的buffer，那么通过dma_map_sgtable这样的api可以直接把它们合并成一个8KB的在iova上是连续的DMA操作，这样一来原来需要两次DMA操作现在只需要一次操作就搞定了。</p>
+<p>随着虚拟化技术在数据中心大规模的使用，iommu的主要作用也由原来单方面的转换功能变成了转换加隔离。在sriov场景iommu的隔离作用主要体现在避免直通给虚拟机A的外设DMA到虚拟机B的内存，之所以能做到这一点还要利益于pcie协议在tlp上的增强，在pcie场景下每个外设发出的dma请求都打上了与这个设备相关联的具有唯一性的flag也即设备的bdf号，而通过这个bdf号可以索引到这个设备的iova转换表。这一点是早期pci协议是无法实现的，因为早期pci设备是通过仲裁机制来实现对pci总线的独占的，也就是说同一时间只有一个pci设备能使用pci总线，因此在这种情况pci设备的dma请求当中是没有bdf号的。</p>
+<h4>iommu硬件使能</h4>
+<p>在服务器启动过程中，bios通过DMAR ACPI 表来检测iommu硬件，这张表的具体结构如下图所示：</p>
+<p><img alt="dmar_acpi_table" src="images/dmar_acpi_table.png">
+<center>图3 </center></p>
+<p><img alt="dmar_acpi_table2" src="images/dmar_acpi_table2.png">
+<center>图4 </center></p>
+<p>而在remapping structures这个list里面目前支持5种类型信息：</p>
+<p><img alt="rmap_structure" src="images/rmap_structure.png"></p>
+<p>而 drhd这个就是用来描述真实的iommu硬件的结构，下面看一下drhd format</p>
+<p><img alt="drhd" src="images/drhd.png">
+<center>图5 </center></p>
+<p>结合上面的图我们重点介绍几个Field，一个是segment number你可以理解为与某个dma remapping unit关联的pci domain；一个是device scope也就是文章开头所描述的每个dmar unit下可以关联不同的设备；一个是INCLUDE_PCI_ALL这个标志位，当这个bit被设置上时驱动会扫描pcie bus下面的所有设备并把这些设备跟这个dmar unit 关联起来，如果这个bit没有设置上则驱动需要解析device scope 然后把这个scope下面的设备跟这个dmar unit关联起来。最后一个就是register base address它定义一系列的register。下面我们看一下驱动里面与之相对应的结构体的定义：</p>
+<div class="highlight"><pre><span></span><code><span class="nx">struct</span><span class="w"> </span><span class="nx">dmar_drhd_unit</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">list_head</span><span class="w"> </span><span class="nx">list</span><span class="p">;</span><span class="w">          </span><span class="cm">/* list of drhd units   */</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w">  </span><span class="nx">acpi_dmar_header</span><span class="w"> </span><span class="o">*</span><span class="nx">hdr</span><span class="p">;</span><span class="w">  </span><span class="cm">/* ACPI header          */</span>
+<span class="w">        </span><span class="kt">u64</span><span class="w">     </span><span class="nx">reg_base_addr</span><span class="p">;</span><span class="w">          </span><span class="cm">/* register base address*/</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w">  </span><span class="nx">dmar_dev_scope</span><span class="w"> </span><span class="o">*</span><span class="nx">devices</span><span class="p">;</span><span class="cm">/* target device array  */</span>
+<span class="w">        </span><span class="nx">int</span><span class="w">     </span><span class="nx">devices_cnt</span><span class="p">;</span><span class="w">            </span><span class="cm">/* target device count  */</span>
+<span class="w">        </span><span class="kt">u16</span><span class="w">     </span><span class="nx">segment</span><span class="p">;</span><span class="w">                </span><span class="cm">/* PCI domain           */</span>
+<span class="w">        </span><span class="kt">u8</span><span class="w">      </span><span class="nx">ignored</span><span class="p">:</span><span class="mi">1</span><span class="p">;</span><span class="w">              </span><span class="cm">/* ignore drhd          */</span>
+<span class="w">        </span><span class="kt">u8</span><span class="w">      </span><span class="nx">include_all</span><span class="p">:</span><span class="mi">1</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">intel_iommu</span><span class="w"> </span><span class="o">*</span><span class="nx">iommu</span><span class="p">;</span>
+<span class="p">};</span><span class="w"> </span>
+</code></pre></div>
+
+<p>其中，struct intel_iommu 是对iommu硬件的一个抽象，其在内核里面的相关定义如下：</p>
+<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">intel_iommu</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">void</span><span class="w"> </span><span class="n">__iomem</span><span class="w">    </span><span class="o">*</span><span class="n">reg</span><span class="p">;</span><span class="w"> </span><span class="cm">/* Pointer to hardware regs, virtual addr */</span>
+<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">reg_phys</span><span class="p">;</span><span class="w"> </span><span class="cm">/* physical address of hw register set */</span>
+<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">reg_size</span><span class="p">;</span><span class="w"> </span><span class="cm">/* size of hw register set */</span>
+<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">cap</span><span class="p">;</span>
+<span class="w">        </span><span class="n">u64</span><span class="w">             </span><span class="n">ecap</span><span class="p">;</span>
+<span class="w">        </span><span class="n">u32</span><span class="w">             </span><span class="n">gcmd</span><span class="p">;</span><span class="w"> </span><span class="cm">/* Holds TE, EAFL. Don&#39;t need SRTP, SFL, WBF */</span>
+<span class="w">        </span><span class="n">raw_spinlock_t</span><span class="w">  </span><span class="n">register_lock</span><span class="p">;</span><span class="w"> </span><span class="cm">/* protect register handling */</span>
+<span class="w">        </span><span class="kt">int</span><span class="w">             </span><span class="n">seq_id</span><span class="p">;</span><span class="w"> </span><span class="cm">/* sequence id of the iommu */</span>
+<span class="w">        </span><span class="kt">int</span><span class="w">             </span><span class="n">agaw</span><span class="p">;</span><span class="w"> </span><span class="cm">/* agaw of this iommu */</span>
+<span class="w">        </span><span class="kt">int</span><span class="w">             </span><span class="n">msagaw</span><span class="p">;</span><span class="w"> </span><span class="cm">/* max sagaw of this iommu */</span>
+<span class="w">        </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">int</span><span class="w">    </span><span class="n">irq</span><span class="p">,</span><span class="w"> </span><span class="n">pr_irq</span><span class="p">;</span>
+<span class="w">        </span><span class="n">u16</span><span class="w">             </span><span class="n">segment</span><span class="p">;</span><span class="w">     </span><span class="cm">/* PCI segment# */</span>
+<span class="w">        </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">char</span><span class="w">   </span><span class="n">name</span><span class="p">[</span><span class="mi">13</span><span class="p">];</span><span class="w">    </span><span class="cm">/* Device Name */</span>
+
+<span class="cp">#ifdef CONFIG_INTEL_IOMMU</span>
+<span class="w">        </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">long</span><span class="w">   </span><span class="o">*</span><span class="n">domain_ids</span><span class="p">;</span><span class="w"> </span><span class="cm">/* bitmap of domains */</span>
+<span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="nc">dmar_domain</span><span class="w"> </span><span class="o">***</span><span class="n">domains</span><span class="p">;</span><span class="w"> </span><span class="cm">/* ptr to domains */</span>
+<span class="w">        </span><span class="n">spinlock_t</span><span class="w">      </span><span class="n">lock</span><span class="p">;</span><span class="w"> </span><span class="cm">/* protect context, domain ids*/</span>
+<span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="nc">root_entry</span><span class="w"> </span><span class="o">*</span><span class="n">root_entry</span><span class="p">;</span><span class="w"> </span><span class="cm">/* virtual address */</span>
+<span class="w">        </span><span class="p">.......</span>
+<span class="w">    </span><span class="p">}</span>
+</code></pre></div>
+
+<p>其中的dmar_domain和root_entry将在iova到hpa的转换当中起到非常重要的作用，这里大家可以通过下面的一张图先有个整体的认知</p>
+<p><img alt="iotlb" src="images/iotlb.png">
+<center>图6 </center></p>
+<p>上图展示的是如何使用bdf号找到相应的iova转换表以及进行地址转换的流程，相关的细节我们将在下面的行文当中详细介绍。首先，我们来看一下iommu从发现到初始化的整个流程是怎么样的。intel iommu的发现是从IOMMU_INIT_POST(detect_intel_iommu)这个地方开始的，我们先来先看一上detect_intel_iommu这个函数具体做了哪些事情。</p>
+<div class="highlight"><pre><span></span><code><span class="nc">int</span><span class="w"> </span><span class="n">__init</span><span class="w"> </span><span class="n">detect_intel_iommu</span><span class="p">(</span><span class="n">void</span><span class="p">)</span>
+<span class="err">{</span>
+<span class="w">        </span><span class="nc">int</span><span class="w"> </span><span class="n">ret</span><span class="p">;</span>
+<span class="w">        </span><span class="n">struct</span><span class="w"> </span><span class="n">dmar_res_callback</span><span class="w"> </span><span class="n">validate_drhd_cb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_UNIT</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_validate_one_drhd</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">ignore_unhandled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">,</span>
+<span class="w">        </span><span class="err">}</span><span class="p">;</span>
+
+<span class="w">        </span><span class="n">down_write</span><span class="p">(</span><span class="o">&amp;</span><span class="n">dmar_global_lock</span><span class="p">);</span>
+<span class="w">        </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dmar_table_detect</span><span class="p">();</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+<span class="w">                </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">!</span><span class="n">dmar_walk_dmar_table</span><span class="p">((</span><span class="n">struct</span><span class="w"> </span><span class="n">acpi_table_dmar</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">dmar_tbl</span><span class="p">,</span>
+<span class="w">                                            </span><span class="o">&amp;</span><span class="n">validate_drhd_cb</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">no_iommu</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">iommu_detected</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">dmar_disabled</span><span class="p">)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="n">iommu_detected</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">                </span><span class="cm">/* Make sure ACS will be enabled */</span>
+<span class="w">                </span><span class="n">pci_request_acs</span><span class="p">();</span>
+<span class="w">        </span><span class="err">}</span>
+
+<span class="n">#ifdef</span><span class="w"> </span><span class="n">CONFIG_X86</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+<span class="w">                </span><span class="n">x86_init</span><span class="p">.</span><span class="n">iommu</span><span class="p">.</span><span class="n">iommu_init</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">intel_iommu_init</span><span class="p">;</span>
+<span class="n">#endif</span>
+
+<span class="w">        </span><span class="n">early_acpi_os_unmap_memory</span><span class="p">((</span><span class="n">void</span><span class="w"> </span><span class="n">__iomem</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">dmar_tbl</span><span class="p">,</span><span class="w"> </span><span class="n">dmar_tbl_size</span><span class="p">);</span>
+<span class="w">        </span><span class="n">dmar_tbl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">NULL</span><span class="p">;</span>
+<span class="w">        </span><span class="n">up_write</span><span class="p">(</span><span class="o">&amp;</span><span class="n">dmar_global_lock</span><span class="p">);</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ret</span><span class="w"> </span><span class="vm">?</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="err">:</span><span class="w"> </span><span class="o">-</span><span class="n">ENODEV</span><span class="p">;</span>
+<span class="err">}</span>
+</code></pre></div>
+
+<p>这个函数主要作用就是获取dmar acpi表，然后解析表里面的相关信息如果表里面remapping structure为drhd则通过cb函数来验证dma remapping hardware unit是否可用，具体大家可以去看一下<code>dmar_validate_one_dh</code>相关实现这里就不多说了。还有就是指定iommu_init函数入口为intel_iommu_init。下面我们来看一下这个函数里面主要做了哪些事情。</p>
+<ul>
+<li>iommu_init_mempool</li>
+</ul>
+<p>为iova, iommu_dmoain, devinfo创建内存池</p>
+<ul>
+<li>dmar_table_init</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="n">struct</span><span class="w"> </span><span class="n">dmar_res_callback</span><span class="w"> </span><span class="n">cb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="p">.</span><span class="n">print_entry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">ignore_unhandled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">arg</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_UNIT</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">drhd_count</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_UNIT</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_drhd</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_RESERVED_MEMORY</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_rmrr</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_ROOT_ATS</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_atsr</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_HARDWARE_AFFINITY</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_rhsa</span><span class="p">,</span>
+<span class="w">                </span><span class="p">.</span><span class="n">cb</span><span class="o">[</span><span class="n">ACPI_DMAR_TYPE_NAMESPACE</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">dmar_parse_one_andd</span><span class="p">,</span>
+<span class="w">        </span><span class="err">}</span><span class="p">;</span>
+</code></pre></div>
+
+<p>解析dmar表中不同类型的remapping structures，上文的图中已经进行了相关说明，目前只支持5类，它们分别是HARDWARE_UNIT，RESERVED_MEMORY，ROOT_ATS ，HARDWARE_AFFINITY，NAMESPACE。其中hardware_unit指的就是iommu硬件，而ATS指的是pcie 的一个重要feature这里我们也不细说。我们重点讲一下RESERVED_MEMORY和 HARDWARE_AFFINITY。HARDWARE_AFFINITY具体指的是Remapping Hardware Status Affinity(RHSA)信息，主要因为在numa架构下iommu硬件可能会跨node，而通过RHSA信息来报告cpu和内存跟每个iommu硬件的亲和性，从而 保证了iommu硬件的perfomace。RESERVED_MEMORY 类型的structures描述的是专门给一些设备预留的DMA内存信息，RMRR 的内存区域必须是4k对齐的，原则上RMRR只针对一些legacy设备比如USB，UMA graphics等设备来使用，而其他设备类型一般不建议使用RMRR。</p>
+<ul>
+<li>dmar_dev_scope_init</li>
+</ul>
+<p>这个函数里面主要是初始化每个dmar unit(iommu硬件)下挂载的设备。</p>
+<ul>
+<li>dmar_init_reserved_ranges</li>
+</ul>
+<p>这个函数主要是reserved一些iova ranges防止被其他设备dma，比如ioapic的iova地址范围还有就是各个pci/pcie设备的mmio地址空间。</p>
+<ul>
+<li>init_no_remapping_devices</li>
+</ul>
+<p>这个函数的主要作用是忽略下面没有设备或者只有gfx设备(显卡驱动不会调用dma相关的api进行相关的操作)的dmar unit硬件</p>
+<ul>
+<li>init_dmars</li>
+</ul>
+<p>这个函数的作用从它的名字也基本能看的出来就是对dma remapping 做一些初始化的工作。具体的比如把每个drhd关联到<code>struct intel_iommu</code>，假设系统当中如果有n个dma硬件则系统会创建一个大小为n<em> sizeof(struct  intel_iommu</em>)的g_iommu数组，首先通过<code>intel_iommu_init_qi</code> 为每个iommu初始化Invalidation Translation Caches 机制，目前有两种一种是<code>Register-based invalidation interface</code>，另外一种是<code>Queued invalidation interface</code>；其次通过<code>iommu_init_domains</code> 为每个intel_iommu分配domain_ids和dmar_domains，同时为每个intel_iommu分配root_entry即root_table的基址(图6)，然后写到基址寄存器RTADDR_REG当中。</p>
+<ul>
+<li>hw_pass_through &amp;iommu_pass_through</li>
+</ul>
+<p>前者表示iommu硬件是否有直通能力是通过读iommu硬件的ecap来获取的，而后者是通过kernel的cmdline人为设置iommu=pt来实现的。如果设置为pt，则iommu_pass_through设置为1，相应的iommu_identify_mapping会设置为IDENTMAP_ALL。在这种场景下，系统会通过si_domain_init创建一个全局的dmar_domain(你可以理解它存储了所有的图6当中address translation的页表)，si表示的是static即静态的，之所以说是静态的是因为si_domain会把每个node上的内存提前建立好iova到hpa的mapping：</p>
+<div class="highlight"><pre><span></span><code>        for_each_online_node(nid) {
+                unsigned long start_pfn, end_pfn;
+                int i;
+
+                for_each_mem_pfn_range(i, nid, &amp;start_pfn, &amp;end_pfn, NULL) {
+                        ret = iommu_domain_identity_map(si_domain,
+                                        PFN_PHYS(start_pfn), PFN_PHYS(end_pfn));
+                        if (ret)
+                                return ret;
+                }
+        }
+</code></pre></div>
+
+<p>然后再把每个iommu下面挂着的设备跟si_domain关联起来，具体做法是说先找到这个设备所属的iommu在驱动层的表现就是找到所属的struct intel_iommu结构体，然后通过这个设备所在的bus号找到其在root_table的位置，再通过devfn创建相对应的context_entry，然后把si_dmain的pgd设置为contex_entry的基址，具体见<code>iommu_prepare_static_identity_mapping(hw_pass_through)</code>函数。</p>
+<ul>
+<li>bus_set_iommu(&amp;pci_bus_type, &amp;intel_iommu_ops)</li>
+</ul>
+<p>这个函数主要是为pci_bus设置intel_iommu_ops，并通过iommu_bus_init做一些初化的工作。具体的工作包括为bus注册通知回调函数，还有就是通过<code>add_iommu_group</code>给每个设备创建iommu_group，一个iommu_group可以对一个设备也可以对应多个设备，至于具体是如何分组我们看一下具体的函数实现，这段逻辑最终会调用到pci_device_group函数：</p>
+<div class="highlight"><pre><span></span><code>struct iommu_group *pci_device_group(struct device *dev)
+{
+    struct pci_dev <span class="gs">*pdev = to_pci_dev(dev);</span>
+
+<span class="gs">    /*</span>
+     <span class="k">*</span> Find the upstream DMA alias for the device.  A device must not
+     <span class="k">*</span> be aliased due to topology in order to have its own IOMMU group.
+     <span class="k">*</span> If we find an alias along the way that already belongs to a
+     <span class="k">*</span> group, use it.
+     <span class="gs">*/  </span>
+<span class="gs">    if (pci_for_each_dma_alias(pdev, get_pci_alias_or_group, &amp;data))</span>
+<span class="gs">        return data.group;</span>
+
+<span class="gs">    /*</span>
+     <span class="k">*</span> Continue upstream from the point of minimum IOMMU granularity
+     <span class="k">*</span> due to aliases to the point where devices are protected from
+     <span class="k">*</span> peer-to-peer DMA by PCI ACS.  Again, if we find an existing
+     <span class="k">*</span> group, use it.
+     <span class="gs">*/</span>
+<span class="gs">    for (bus = pdev-&gt;bus; !pci_is_root_bus(bus); bus = bus-&gt;parent) {</span>
+<span class="gs">        if (!bus-&gt;self)</span>
+<span class="gs">            continue;</span>
+
+<span class="gs">        if (pci_acs_path_enabled(bus-&gt;self, NULL, REQ_ACS_FLAGS))</span>
+<span class="gs">            break;</span>
+
+<span class="gs">        pdev = bus-&gt;self;</span>
+<span class="gs">        group = iommu_group_get(&amp;pdev-&gt;dev);</span>
+<span class="gs">        if (group)</span>
+<span class="gs">            return group;</span>
+<span class="gs">   }</span>
+
+<span class="gs">    /*</span>   
+     <span class="k">*</span> Look for existing groups on device aliases.  If we alias another
+     <span class="k">*</span> device or another device aliases us, use the same group.
+     <span class="gs">*/</span>
+<span class="gs">    group = get_pci_alias_group(pdev, (unsigned long *</span>)devfns);
+    if (group)
+        return group;
+
+    /*   
+     <span class="k">*</span> Look for existing groups on non-isolated functions on the same
+     <span class="k">*</span> slot and aliases of those funcions, if any.  No need to clear
+     <span class="k">*</span> the search bitmap, the tested devfns are still valid.
+     <span class="gs">*/</span>
+<span class="gs">    group = get_pci_function_alias_group(pdev, (unsigned long *</span>)devfns);
+    if (group)
+        return group;
+
+    return iommu_group_alloc();
+}
+</code></pre></div>
+
+<p>这个函数的核心逻辑在于<code>pci_acs_path_enabled</code>，简单来说如果是pcie的设备则检查该设备到root complex的路径上如果都开启了ACS则这个设备就单独成一个iommu_group，如果不是则找到它的alias group就行了比如如果这个是传统的pci bus(没有pcie这些ACS的特性)则这个pci bus下面的所有设备就组合成一个iommu_group。</p>
+<h4>总结</h4>
+<p>文章主要讲了一下iommu硬失的架构以及iommu硬件在系统层面的初始化的整个流程， 核心的就是iommu硬件通过dmar acpi表被系统发现，然后解析表里面的信息，然后解析每个iommu硬件下的硬件设备，如果iommu为pt则为每个硬件设备创建static的 maping表，接着为每个pci设备进行分组。这里还有几个概念要理解一下：
+- struct inte_iommu： iommu硬件在驱动层所对应的概念
+- struct iommu_group: 一个group下面可以对应多个或者一个硬件设备
+- struct dmar_domain: dmar_domain里面存储的是iova-&gt;hpa的转换页表，一个dmar_domain可以为多个或者一个设备服务。
+- struct iommu_domain:  一个iommu_domain里面可以有多个iommu_group，然后生个iommu_group通过iommu_domain最终找到dmar_domain进行转换。</p>
+<h4>后记</h4>
+<p>在下一篇文章里面会详细讲一下在虚拟化和非虚拟化场景下系统如何通过iommu进行dma的相关操作包括中断remapping的处理。这里大家可以先想一下这几个问题：</p>
+<ul>
+<li>虚拟机里面是没有iommu的，那dma是如何进行的？</li>
+<li>在非虚拟化场景下iommu=pt和iommu disabled这两者有什么区别？</li>
+<li>不同intel iommu硬件下的两个pci设备是如何实现直通给同一个vm的？</li>
+<li>iommu 中断remapping在虚拟化和非虚拟化场景是如何工作的。</li>
+</ul>
+
+                <!-- 图片画廊 -->
+            </main>
+
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">iommu</span>
+                </div>
+            </div>
+
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">二 18 一月 2022</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
+
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
+
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
+<footer>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+    </body>
+    <!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>

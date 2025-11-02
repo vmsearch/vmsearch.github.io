@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh_cn">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="序言 虚拟化场景下，有时为了提升虚拟机io性能通常会选择把设备直通给vm。设备直通要么使用设备的SRIOV或者SIOV能力，要么把整个设备都通给虚拟机。有些场景下，为了 …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="vfio, articles, " />
+        <title>聊聊vfio mdev工作原理  · KernelNote - AI基础设施技术博客
+</title>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LRRMJ08SPD');
+</script>
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
+
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
+                聊聊vfio mdev工作原理
+            </h1>
+
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2022-05-31T20:30:00+08:00">二 31 五月 2022</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">vfio</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <h4>序言</h4>
+<p>虚拟化场景下，有时为了提升虚拟机io性能通常会选择把设备直通给vm。设备直通要么使用设备的SRIOV或者SIOV能力，要么把整个设备都通给虚拟机。有些场景下，为了提升设备利用率我们希望能把后端的硬件设备切分成更小的实例提供给更多的vm来使用，但是这个设备又没有SRIOV或者SIOV的能力(比如gpu，nvme)那该怎么办呢？别着急，vfio mdev框架就是为了解决这样的问题而生的。</p>
+<h4>vfio mdev框架</h4>
+<p>从字面上看就知道这个框架涉及到两个核心组件vfio 和mdev。那么下面我们就来看一下这两个组件是如何在一起来工作的。想必大家都应该比较熟悉linux当中的bus，driver，device的框架，简单说来某个device它必须挂在某个具体的bus上，然后device由跟这个bus绑定的driver来驱动。那么在vfio_mdev这个架构当中，linux内核定义了一种叫<code>mdev_bus</code>的 bus_type。相关定义具体如下</p>
+<div class="highlight"><pre><span></span><code><span class="nx">struct</span><span class="w"> </span><span class="nx">bus_type</span><span class="w"> </span><span class="nx">mdev_bus_type</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="p">.</span><span class="nx">name</span><span class="w">           </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;mdev&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="p">.</span><span class="nx">probe</span><span class="w">          </span><span class="p">=</span><span class="w"> </span><span class="nx">mdev_probe</span><span class="p">,</span>
+<span class="w">        </span><span class="p">.</span><span class="nx">remove</span><span class="w">         </span><span class="p">=</span><span class="w"> </span><span class="nx">mdev_remove</span><span class="p">,</span>
+<span class="p">};</span>
+<span class="nx">EXPORT_SYMBOL_GPL</span><span class="p">(</span><span class="nx">mdev_bus_type</span><span class="p">);</span>
+</code></pre></div>
+
+<p>这里的<code>mdev_probe</code>和<code>mdev_remove</code>分别会在device probe和remove的时候调用到，通常情况下在bus probe和remove函数里面会再调用跟这个bus bind的 device driver的probe和remove函数。</p>
+<p>接着mdev core driver在加载的时候会将 mdev_bus 注册到系统当中</p>
+<div class="highlight"><pre><span></span><code><span class="nx">mdev_bus_register</span><span class="o">-&gt;</span><span class="nx">bus_register</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">mdev_bus_type</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>bus_register</code> 这个函数主要是初始化subsys_private 以及 klist_devices、klist_drivers这两个klist，然后在sysfs下创建相关目录</p>
+<div class="highlight"><pre><span></span><code>/sys/bus/mdev/
+├── devices
+├── drivers
+├── drivers_autoprobe
+├── drivers_probe
+└── uevent
+</code></pre></div>
+
+<p>然后我们再来讲vfio侧，其为mdev bus专门开发了一个vfio_mdev driver</p>
+<div class="highlight"><pre><span></span><code>static struct mdev_driver vfio_mdev_driver = {
+        .name   = &quot;vfio_mdev&quot;,
+        .probe  = vfio_mdev_probe,
+        .remove = vfio_mdev_remove,
+}
+</code></pre></div>
+
+<p>紧接着在vfio mdev driver load的时候会将自己跟mdev bus绑定起来，具体通过<code>mdev_register_driver</code> 来实现</p>
+<div class="highlight"><pre><span></span><code><span class="nx">int</span><span class="w"> </span><span class="nx">mdev_register_driver</span><span class="p">(</span><span class="nx">struct</span><span class="w"> </span><span class="nx">mdev_driver</span><span class="w"> </span><span class="o">*</span><span class="nx">drv</span><span class="p">,</span><span class="w"> </span><span class="nx">struct</span><span class="w"> </span><span class="nx">module</span><span class="w"> </span><span class="o">*</span><span class="nx">owner</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">        </span><span class="cm">/* initialize common driver fields */</span>
+<span class="w">        </span><span class="nx">drv</span><span class="o">-&gt;</span><span class="nx">driver</span><span class="p">.</span><span class="nx">name</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">drv</span><span class="o">-&gt;</span><span class="nx">name</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">drv</span><span class="o">-&gt;</span><span class="nx">driver</span><span class="p">.</span><span class="nx">bus</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">mdev_bus_type</span><span class="p">;</span><span class="w"> </span><span class="c1">// bus 设置为mdev</span>
+<span class="w">        </span><span class="nx">drv</span><span class="o">-&gt;</span><span class="nx">driver</span><span class="p">.</span><span class="nx">owner</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">owner</span><span class="p">;</span>
+
+<span class="w">        </span><span class="cm">/* register with core */</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">driver_register</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">drv</span><span class="o">-&gt;</span><span class="nx">driver</span><span class="p">);</span><span class="w"> </span><span class="c1">//注册这个 driver</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="n">driver_register</span><span class="o">-&gt;</span><span class="n">bus_add_driver</span>
+</code></pre></div>
+
+<p><code>bus_add_driver</code> 这个函数里面主要实现为：初始化driver_private，将driver放到上其所属bus的 klist_drivers上，然后通过<code>driver_attach</code> 去probe 该 bus klist_devices上的设备，最后在sysfs下面创建相关的目录</p>
+<div class="highlight"><pre><span></span><code><span class="o">/</span><span class="n">sys</span><span class="o">/</span><span class="n">bus</span><span class="o">/</span><span class="n">mdev</span><span class="o">/</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">devices</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">drivers</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">vfio_mdev</span>
+<span class="err">│</span><span class="w">       </span><span class="err">├──</span><span class="w"> </span><span class="n">bind</span>
+<span class="err">│</span><span class="w">       </span><span class="err">├──</span><span class="w"> </span><span class="kr">module</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="kr">module</span><span class="o">/</span><span class="n">vfio_mdev</span>
+<span class="err">│</span><span class="w">       </span><span class="err">├──</span><span class="w"> </span><span class="n">uevent</span>
+<span class="err">│</span><span class="w">       </span><span class="err">└──</span><span class="w"> </span><span class="n">unbind</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">drivers_autoprobe</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">drivers_probe</span>
+<span class="err">└──</span><span class="w"> </span><span class="n">uevent</span>
+</code></pre></div>
+
+<p>可以看到 mdev bus下面driver目录下已经有内容了，而此时devices目录下还是空的。</p>
+<h4>设备在mdev框架下的使能</h4>
+<p>通常我们会为这个设备重新写一个具有mdev功能的driver，这个driver与设备本身的driver所做的事情是有所不同的。mdev driver具体要做哪些事情呢？回答这个问题之前我们先来想想mdev需要帮我解决哪些问题。</p>
+<ul>
+<li>config space、bar space、pcie capbility</li>
+</ul>
+<p>因为我们需要给vm呈现一个完整的设备，而backend 物理设备是没有sriov功能的，所以config space、bar以及相关的pci cap是需要在这个mdev driver里面进行模拟。</p>
+<ul>
+<li>
+<p>mmio 访问</p>
+<p>回想一下，在sriov场景下设备的mmio是passthrough给vm的(除msix table相关mmio)，vm侧对mmio的访问都是不需要hypervisor参与的。而在mdev场景下，由于一个设备要share给多个vm的，所以这个些mmio的访问操作都是需要在mdev driver侧来进行处理的。</p>
+</li>
+<li>
+<p>dma</p>
+<p>在sriov场景下dma的转换是由iommu硬件侧自动完成的，而在mdev场景下由于同一个设备要在多个vm下共享无法再使用iommu功能(物理设备侧只一个bdf号，多个vm之间无法进行区分)。因此，mdev场景下dma的相关转换和相关操作也是需要在驱动里面实现。</p>
+</li>
+<li>
+<p>中断</p>
+<p>sriov的场景下，中断采用的是dma remapping和posted interrupt，而之所以能这么干主要是因为其后端对应的是一个独立的VF；而在mdev场景下，多个vm share 一个后端硬件设备只能通过per vm的irqfd这种方式。</p>
+</li>
+</ul>
+<p>设备的 mdev driver除了需要实现的相关功能之外，在驱动init的时候还需要将自己注册为虚拟设备的parent，具体是通过<code>mdev_register_device</code> 来实现。这个函数的主要逻辑就是创建mdev_parent，然后给parent dev和ops分别赋值为当前的物理设备以及该设备mde_driver当中定义的ops，当中的回调函数定义如下：</p>
+<div class="highlight"><pre><span></span><code><span class="n">struct</span><span class="w"> </span><span class="n">mdev_parent_ops</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">struct</span><span class="w"> </span><span class="n">module</span><span class="w">   </span><span class="o">*</span><span class="n">owner</span><span class="p">;</span>
+<span class="w">        </span><span class="k">const</span><span class="w"> </span><span class="n">struct</span><span class="w"> </span><span class="n">attribute_group</span><span class="w"> </span><span class="o">**</span><span class="n">dev_attr_groups</span><span class="p">;</span>
+<span class="w">        </span><span class="k">const</span><span class="w"> </span><span class="n">struct</span><span class="w"> </span><span class="n">attribute_group</span><span class="w"> </span><span class="o">**</span><span class="n">mdev_attr_groups</span><span class="p">;</span>
+<span class="w">        </span><span class="n">struct</span><span class="w"> </span><span class="n">attribute_group</span><span class="w"> </span><span class="o">**</span><span class="n">supported_type_groups</span><span class="p">;</span>
+
+<span class="w">        </span><span class="nb nb-Type">int</span><span class="w">     </span><span class="p">(</span><span class="o">*</span><span class="n">create</span><span class="p">)(</span><span class="n">struct</span><span class="w"> </span><span class="n">kobject</span><span class="w"> </span><span class="o">*</span><span class="n">kobj</span><span class="p">,</span><span class="w"> </span><span class="n">struct</span><span class="w"> </span><span class="n">mdev_device</span><span class="w"> </span><span class="o">*</span><span class="n">mdev</span><span class="p">);</span>
+<span class="w">        </span><span class="nb nb-Type">int</span><span class="w">     </span><span class="p">(</span><span class="o">*</span><span class="n">remove</span><span class="p">)(</span><span class="n">struct</span><span class="w"> </span><span class="n">mdev_device</span><span class="w"> </span><span class="o">*</span><span class="n">mdev</span><span class="p">);</span>
+<span class="w">        </span><span class="nb nb-Type">int</span><span class="w">     </span><span class="p">(</span><span class="o">*</span><span class="n">open</span><span class="p">)(</span><span class="n">struct</span><span class="w"> </span><span class="n">mdev_device</span><span class="w"> </span><span class="o">*</span><span class="n">mdev</span><span class="p">);</span>
+<span class="w">        </span><span class="nb nb-Type">void</span><span class="w">    </span><span class="p">(</span><span class="o">*</span><span class="n">release</span><span class="p">)(</span><span class="n">struct</span><span class="w"> </span><span class="n">mdev_device</span><span class="w"> </span><span class="o">*</span><span class="n">mdev</span><span class="p">);</span>
+<span class="w">        </span><span class="n">ssize_t</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">read</span><span class="p">)(</span><span class="n">struct</span><span class="w"> </span><span class="n">mdev_device</span><span class="w"> </span><span class="o">*</span><span class="n">mdev</span><span class="p">,</span><span class="w"> </span><span class="nb">char</span><span class="w"> </span><span class="n">__user</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">,</span>
+<span class="w">                        </span><span class="n">size_t</span><span class="w"> </span><span class="n">count</span><span class="p">,</span><span class="w"> </span><span class="n">loff_t</span><span class="w"> </span><span class="o">*</span><span class="n">ppos</span><span class="p">);</span>
+<span class="w">        </span><span class="n">ssize_t</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="n">write</span><span class="p">)(</span><span class="n">struct</span><span class="w"> </span><span class="n">mdev_device</span><span class="w"> </span><span class="o">*</span><span class="n">mdev</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="nb">char</span><span class="w"> </span><span class="n">__user</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">,</span>
+<span class="w">                         </span><span class="n">size_t</span><span class="w"> </span><span class="n">count</span><span class="p">,</span><span class="w"> </span><span class="n">loff_t</span><span class="w"> </span><span class="o">*</span><span class="n">ppos</span><span class="p">);</span>
+<span class="w">        </span><span class="n">long</span><span class="w">    </span><span class="p">(</span><span class="o">*</span><span class="n">ioctl</span><span class="p">)(</span><span class="n">struct</span><span class="w"> </span><span class="n">mdev_device</span><span class="w"> </span><span class="o">*</span><span class="n">mdev</span><span class="p">,</span><span class="w"> </span><span class="n">unsigned</span><span class="w"> </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">cmd</span><span class="p">,</span>
+<span class="w">                         </span><span class="n">unsigned</span><span class="w"> </span><span class="n">long</span><span class="w"> </span><span class="n">arg</span><span class="p">);</span>
+<span class="w">        </span><span class="nb nb-Type">int</span><span class="w">     </span><span class="p">(</span><span class="o">*</span><span class="n">mmap</span><span class="p">)(</span><span class="n">struct</span><span class="w"> </span><span class="n">mdev_device</span><span class="w"> </span><span class="o">*</span><span class="n">mdev</span><span class="p">,</span><span class="w"> </span><span class="n">struct</span><span class="w"> </span><span class="n">vm_area_struct</span><span class="w"> </span><span class="o">*</span><span class="n">vma</span><span class="p">);</span>
+<span class="p">};</span>
+</code></pre></div>
+
+<p>最后，在sysfs下给parent创建相应的目录(以vfio_mdev sample mtty 驱动为例子)</p>
+<div class="highlight"><pre><span></span><code><span class="o">/</span><span class="nx">sys</span><span class="o">/</span><span class="nx">devices</span><span class="o">/</span><span class="kd">virtual</span><span class="o">/</span><span class="nx">mtty</span><span class="o">/</span>
+<span class="err">└──</span><span class="w"> </span><span class="nx">mtty</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="nx">mdev_supported_types</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">mtty</span><span class="o">-</span><span class="mi">1</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">available_instances</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">create</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">device_api</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">devices</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="nx">name</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="nx">mtty</span><span class="o">-</span><span class="mi">2</span>
+<span class="w">    </span><span class="err">│</span><span class="w">       </span><span class="err">├──</span><span class="w"> </span><span class="nx">available_instances</span>
+<span class="w">    </span><span class="err">│</span><span class="w">       </span><span class="err">├──</span><span class="w"> </span><span class="nx">create</span>
+<span class="w">    </span><span class="err">│</span><span class="w">       </span><span class="err">├──</span><span class="w"> </span><span class="nx">device_api</span>
+<span class="w">    </span><span class="err">│</span><span class="w">       </span><span class="err">├──</span><span class="w"> </span><span class="nx">devices</span>
+<span class="w">    </span><span class="err">│</span><span class="w">       </span><span class="err">└──</span><span class="w"> </span><span class="nx">name</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="nx">mtty_dev</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="nx">sample_mtty_dev</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="nx">power</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">async</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">autosuspend_delay_ms</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">control</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_active_kids</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_active_time</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_enabled</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_status</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_suspended_time</span>
+<span class="w">    </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="nx">runtime_usage</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="nx">subsystem</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="kd">class</span><span class="o">/</span><span class="nx">mtty</span>
+<span class="w">    </span><span class="err">└──</span><span class="w"> </span><span class="nx">uevent</span>
+</code></pre></div>
+
+<p>下面我们来看一下如何创建可以通给vm的mdev instance。原来在sriov场景下需要把设备从原生驱动unbind，然后再将其bind到vfio-pci的驱动上；而mdev设备也有类似这样的流程，下面还是以mtty这个sample为例子来看一下相关流程</p>
+<div class="highlight"><pre><span></span><code><span class="err">#</span><span class="w"> </span><span class="nx">echo</span><span class="w"> </span><span class="s">&quot;83b8f4f2-509f-382f-3c1e-e6bfe0fa1001&quot;</span><span class="w"> </span><span class="p">&gt;</span><span class="w">    </span>\
+<span class="w">         </span><span class="o">/</span><span class="nx">sys</span><span class="o">/</span><span class="nx">devices</span><span class="o">/</span><span class="kd">virtual</span><span class="o">/</span><span class="nx">mtty</span><span class="o">/</span><span class="nx">mtty</span><span class="o">/</span><span class="nx">mdev_supported_types</span><span class="o">/</span><span class="nx">mtty</span><span class="o">-</span><span class="mi">1</span><span class="o">/</span><span class="nx">create</span>
+<span class="o">-----------</span>
+<span class="nx">直通给vm的时候</span><span class="err">，</span><span class="nx">qemu侧参数配置</span>
+
+<span class="o">-</span><span class="nx">device</span><span class="w"> </span><span class="nx">vfio</span><span class="o">-</span><span class="nx">pci</span><span class="p">,</span>\
+<span class="w"> </span><span class="nx">sysfsdev</span><span class="p">=</span><span class="o">/</span><span class="nx">sys</span><span class="o">/</span><span class="nx">bus</span><span class="o">/</span><span class="nx">mdev</span><span class="o">/</span><span class="nx">devices</span><span class="o">/</span><span class="mi">83</span><span class="nx">b8f4f2</span><span class="o">-</span><span class="mi">509</span><span class="nx">f</span><span class="o">-</span><span class="mi">382</span><span class="nx">f</span><span class="o">-</span><span class="mi">3</span><span class="nx">c1e</span><span class="o">-</span><span class="nx">e6bfe0fa1001</span>
+</code></pre></div>
+
+<p>当往create去写uuid的时候，会触发 <code>mdev_device_create</code> 函数，这个函数主要实现逻辑如下：</p>
+<ul>
+<li>新建mdev虚拟设备，并进行相关的初始化</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nx">mdev</span><span class="o">-&gt;</span><span class="nx">parent</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">parent</span><span class="p">;</span><span class="w"> </span><span class="c1">//这个parent指的是后端对应的物理设备</span>
+<span class="o">...</span><span class="p">..</span><span class="w"> </span><span class="c1">//skip</span>
+<span class="nx">mdev</span><span class="o">-&gt;</span><span class="nx">dev</span><span class="p">.</span><span class="nx">parent</span><span class="w">  </span><span class="p">=</span><span class="w"> </span><span class="nx">dev</span><span class="p">;</span><span class="w">   </span><span class="c1">//新创建mdev-&gt;dev实例，并将其父指向当前的dev即mtty-1</span>
+<span class="nx">mdev</span><span class="o">-&gt;</span><span class="nx">dev</span><span class="p">.</span><span class="nx">bus</span><span class="w">     </span><span class="p">=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">mdev_bus_type</span><span class="p">;</span>
+<span class="nx">mdev</span><span class="o">-&gt;</span><span class="nx">dev</span><span class="p">.</span><span class="nx">release</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">mdev_device_release</span><span class="p">;</span>
+<span class="nx">dev_set_name</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">mdev</span><span class="o">-&gt;</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;%pUl&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">uuid</span><span class="p">.</span><span class="nx">b</span><span class="p">)</span>
+</code></pre></div>
+
+<ul>
+<li>调用<code>device_register</code>对<code>mdev-&gt;dev</code>进行初始化</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="n">device_register</span><span class="o">-&gt;</span><span class="n">device_add</span><span class="o">-&gt;</span><span class="n">bus_probe_device</span><span class="o">-&gt;</span><span class="n">device_initial_probe</span><span class="o">-&gt;</span><span class="n">__device_attach_driver</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">...</span><span class="o">-&gt;</span><span class="n">bus</span><span class="o">-&gt;</span><span class="n">probe</span>
+</code></pre></div>
+
+<p>最终一路会调到<code>mdev_probe</code>，然后再调用vfio_mdev driver的probe函数<code>vfio_mdev_probe</code>。先来看一下mdev_probe函数具体都干了啥。</p>
+<div class="highlight"><pre><span></span><code>static int mdev_probe(struct device *dev)
+{
+        struct mdev_driver *drv = to_mdev_driver(dev-&gt;driver);
+        struct mdev_device *mdev = to_mdev_device(dev);
+        int ret;
+
+        ret = mdev_attach_iommu(mdev);
+        if (ret)
+                return ret;
+
+        if (drv &amp;&amp; drv-&gt;probe) {
+                ret = drv-&gt;probe(dev);
+                if (ret)
+                        mdev_detach_iommu(mdev);
+        }
+
+        return ret;
+}
+</code></pre></div>
+
+<p>首先通过<code>mdev_attach_iommu</code> 函数，<strong>为该mdev设备创建iommu_group，然后将设备添加到这个iommu_group里面。注意，这个iommu_group并没有创建default的domain，所以不会创建domain_mapping。接着看一下<code>vfio_mdev_probe</code> 函数，在这个函数里面核心逻辑就是创建vfio_group并将其跟iommu_group对应起来，然后再创建vfio_device并将dev,vfio_group和定义的vfio_mdev_dev_ops绑定起来</strong>。最后，再调用parent dev的mdev_parent_ops当中的create函数。设备成功create之后视图如下：</p>
+<div class="highlight"><pre><span></span><code><span class="o">/</span><span class="nx">sys</span><span class="o">/</span><span class="nx">bus</span><span class="o">/</span><span class="nx">mdev</span><span class="o">/</span><span class="nx">devices</span><span class="o">/</span><span class="mi">83</span><span class="nx">b8f4f2</span><span class="o">-</span><span class="mi">509</span><span class="nx">f</span><span class="o">-</span><span class="mi">382</span><span class="nx">f</span><span class="o">-</span><span class="mi">3</span><span class="nx">c1e</span><span class="o">-</span><span class="nx">e6bfe0fa1001</span>
+<span class="err">├──</span><span class="w"> </span><span class="nx">driver</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="nx">bus</span><span class="o">/</span><span class="nx">mdev</span><span class="o">/</span><span class="nx">drivers</span><span class="o">/</span><span class="nx">vfio_mdev</span>
+<span class="err">├──</span><span class="w"> </span><span class="nx">iommu_group</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="nx">kernel</span><span class="o">/</span><span class="nx">iommu_groups</span><span class="o">/</span><span class="mi">0</span>
+<span class="err">├──</span><span class="w"> </span><span class="nx">mdev_type</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">..</span><span class="o">/</span><span class="nx">mdev_supported_types</span><span class="o">/</span><span class="nx">mtty</span><span class="o">-</span><span class="mi">1</span>
+<span class="err">├──</span><span class="w"> </span><span class="nx">power</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">async</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">autosuspend_delay_ms</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">control</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_active_kids</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_active_time</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_enabled</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_status</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="nx">runtime_suspended_time</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="nx">runtime_usage</span>
+<span class="err">├──</span><span class="w"> </span><span class="nx">remove</span>
+<span class="err">├──</span><span class="w"> </span><span class="nx">subsystem</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="p">..</span><span class="o">/</span><span class="nx">bus</span><span class="o">/</span><span class="nx">mdev</span>
+<span class="err">├──</span><span class="w"> </span><span class="nx">uevent</span>
+<span class="err">└──</span><span class="w"> </span><span class="nx">vendor</span>
+<span class="w">    </span><span class="err">└──</span><span class="w"> </span><span class="nx">sample_mdev_dev</span>
+</code></pre></div>
+
+<h4>mdev 设备直通给vm的实现</h4>
+<p>如上面所示，mdev virtual dev直通给vm走的还是qemu当中vfio pci的方式。这里我们先回忆一下qemu vfio 都做了哪些事情。简单来说就是几个概念，<strong>一类是per vm的：container， vfio_iommu, vfio_domain；另一类 per device的：vfio_group。一个container下面包含多个vfio_group；一个vfio_iommu的domain_list里面当前只有一个vfio_domain</strong>。同时还有几个fd，具体如下：</p>
+<ul>
+<li>
+<p>group_fd = open("/dev/vfio/$group")</p>
+<p>通过这个fd下发的ioctl主要做的事情有：判断这个group是否可用，获取这个device fd，将这个group绑定到container下面。</p>
+</li>
+<li>
+<p>container_fd = open("/dev/vfio/vfio")</p>
+<p>通过这个fd下发的ioctl主要做的事情有：获取iommu type(是type1还是spapr_tce)，将每个vfio_iommu attach到vfio_domain上。其中，后面这个事情要注意一下因为在mdev的场景下在逻辑上有些区别，具体见<code>vfio_iommu_type1_attach_group</code></p>
+</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">mdev_bus</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">((</span><span class="nx">bus</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">mdev_bus</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">!</span><span class="nx">iommu_present</span><span class="p">(</span><span class="nx">bus</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nx">symbol_put</span><span class="p">(</span><span class="nx">mdev_bus_type</span><span class="p">);</span>
+<span class="w">                        </span><span class="k">if</span><span class="w"> </span><span class="p">(!</span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">external_domain</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                                </span><span class="nx">INIT_LIST_HEAD</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">domain</span><span class="o">-&gt;</span><span class="nx">group_list</span><span class="p">);</span>
+<span class="w">                                </span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">external_domain</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">domain</span><span class="p">;</span>
+<span class="w">                        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span>
+<span class="w">                                </span><span class="nx">kfree</span><span class="p">(</span><span class="nx">domain</span><span class="p">);</span>
+
+<span class="w">                        </span><span class="nx">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">group</span><span class="o">-&gt;</span><span class="nx">next</span><span class="p">,</span>
+<span class="w">                                 </span><span class="o">&amp;</span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">external_domain</span><span class="o">-&gt;</span><span class="nx">group_list</span><span class="p">);</span>
+<span class="w">                        </span><span class="nx">mutex_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">lock</span><span class="p">);</span>
+<span class="w">                        </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">                </span><span class="nx">symbol_put</span><span class="p">(</span><span class="nx">mdev_bus_type</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+
+<p><strong>从上面的逻辑可以得知，如果是mdev设备则会为这些设备单独创建一个external_domain表示其没有iommu能力</strong> 。
+另外，<strong>vfio dma map也是通过container fd来做的，具体执行的是内核侧<code>vfio_dma_do_map</code> ，函数实现当中如果发现vm直通设备当中只有mdev设备的话，那它是不会去真正执行 pin and map的</strong>，具体见</p>
+<div class="highlight"><pre><span></span><code><span class="w">        </span><span class="o">/*</span><span class="w"> </span><span class="n">Don</span><span class="o">&#39;</span><span class="n">t</span><span class="w"> </span><span class="n">pin</span><span class="w"> </span><span class="nb">and</span><span class="w"> </span><span class="n">map</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">container</span><span class="w"> </span><span class="n">doesn</span><span class="o">&#39;</span><span class="n">t</span><span class="w"> </span><span class="n">contain</span><span class="w"> </span><span class="n">IOMMU</span><span class="w"> </span><span class="n">capable</span><span class="w"> </span><span class="n">domain</span><span class="o">*/</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span>!<span class="n">IS_IOMMU_CAP_DOMAIN_IN_CONTAINER</span><span class="p">(</span><span class="n">iommu</span><span class="p">))</span>
+<span class="w">                </span><span class="n">dma</span><span class="o">-&gt;</span><span class="nb">size</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">size</span><span class="p">;</span>
+<span class="w">        </span><span class="k">else</span>
+<span class="w">                </span><span class="n">ret</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">vfio_pin_map_dma</span><span class="p">(</span><span class="n">iommu</span><span class="p">,</span><span class="w"> </span><span class="n">dma</span><span class="p">,</span><span class="w"> </span><span class="nb">size</span><span class="p">);</span>
+</code></pre></div>
+
+<ul>
+<li>
+<p>device fd</p>
+<p>设备的相关的操作比如config space，mmio的读写，bar region的map以及irq相关的操作都是通过这个fd来进行的，那么在mdev的场景 所有的操作比如read, write, ioctl都是先call到 vfio_mdev driver，然后再经过vfio_mdev call到parent ops注册的callback函数即底层硬件设备mdev driver ops 里面实现的 callback函数。</p>
+</li>
+</ul>
+<h4>总结</h4>
+<p>这里我就不详细介绍 mdev driver的具体实现了，大家如果感兴趣可以去看一下intel vgpu，mdev nvme等这些 mdev driver的实现，看完之后可能你会对这篇文章有更多的理解。从上面来看mdev的方案在性能上不可能做的太高，siov方案当中虽然也使用了mdev，但是siov当中数据面重一些要路径访问仍然走的是passthrough的方式。但是不管怎么样，mdev给我们提供了这样一种能力，至于是否能用就得看你的场景呢。</p>
+
+                <!-- 图片画廊 -->
+            </main>
+
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">vfio</span>
+                </div>
+            </div>
+
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">二 31 五月 2022</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
+
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
+
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
+<footer>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+    </body>
+    <!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>

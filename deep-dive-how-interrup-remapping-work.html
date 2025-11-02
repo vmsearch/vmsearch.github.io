@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh_cn">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="序言 系列三主要分析了interrupt remaping底层硬件的架构设计和工作原理，同时也简要的描述了一下interrupt remapping在操作系统层面的初始化流程。那么这一篇我们来仔细分析一下它到底是如何工作的。 工作 …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="iommu, interrut remapping, articles, " />
+        <title>深入了解iommu系列四：interrupt remapping 工作机制解析  · KernelNote - AI基础设施技术博客
+</title>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LRRMJ08SPD');
+</script>
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
+
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
+                深入了解iommu系列四：interrupt remapping 工作机制解析
+            </h1>
+
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2022-03-05T00:00:00+08:00">六 05 三月 2022</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">iommu</span>
+                    <span class="article-tag">interrut remapping</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <h3>序言</h3>
+<p>系列三主要分析了interrupt remaping底层硬件的架构设计和工作原理，同时也简要的描述了一下interrupt remapping在操作系统层面的初始化流程。那么这一篇我们来仔细分析一下它到底是如何工作的。</p>
+<h3>工作机制</h3>
+<h4>非虚拟化场景</h4>
+<p>在非虚拟化场景下当设备去enable msix中断的时候，其调用路径是这样的</p>
+<div class="highlight"><pre><span></span><code><span class="n">pci_enable_msix_range</span><span class="o">-&gt;</span><span class="n">__pci_enable_msix_range</span><span class="o">-&gt;</span><span class="n">__pci_enable_msix</span>
+<span class="o">-&gt;</span><span class="n">msix_capability_init</span><span class="o">-&gt;</span><span class="n">pci_msi_setup_msi_irqs</span>
+</code></pre></div>
+
+<p>这里对pci_msi_setup_msi_irqs进行一下说明</p>
+<div class="highlight"><pre><span></span><code><span class="nx">static</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="nx">pci_msi_setup_msi_irqs</span><span class="p">(</span><span class="nx">struct</span><span class="w"> </span><span class="nx">pci_dev</span><span class="w"> </span><span class="o">*</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="nx">nvec</span><span class="p">,</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="k">type</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">irq_domain</span><span class="w"> </span><span class="o">*</span><span class="nx">domain</span><span class="p">;</span>
+
+<span class="w">        </span><span class="nx">domain</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">dev_get_msi_domain</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">dev</span><span class="o">-&gt;</span><span class="nx">dev</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">domain</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">irq_domain_is_hierarchy</span><span class="p">(</span><span class="nx">domain</span><span class="p">))</span>
+<span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="nx">msi_domain_alloc_irqs</span><span class="p">(</span><span class="nx">domain</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">dev</span><span class="o">-&gt;</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">nvec</span><span class="p">);</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">arch_setup_msi_irqs</span><span class="p">(</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">nvec</span><span class="p">,</span><span class="w"> </span><span class="k">type</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>通常都会default走arch_setup_msi_irqs，除了在deviceTree里面对设备的irq_domain进行了显示的绑定则会直接走msi_domain_alloc_irqs。接着往下看</p>
+<div class="highlight"><pre><span></span><code><span class="n">pci_msi_setup_msi_irqs</span><span class="o">-&gt;</span><span class="n">arch_setup_msi_irqs</span><span class="o">-&gt;</span><span class="n">native_setup_msi_irqs</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="nx">int</span><span class="w"> </span><span class="nx">native_setup_msi_irqs</span><span class="p">(</span><span class="nx">struct</span><span class="w"> </span><span class="nx">pci_dev</span><span class="w"> </span><span class="o">*</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="nx">nvec</span><span class="p">,</span><span class="w"> </span><span class="nx">int</span><span class="w"> </span><span class="k">type</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">irq_domain</span><span class="w"> </span><span class="o">*</span><span class="nx">domain</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">irq_alloc_info</span><span class="w"> </span><span class="nx">info</span><span class="p">;</span>
+
+<span class="w">        </span><span class="nx">init_irq_alloc_info</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">info</span><span class="p">,</span><span class="w"> </span><span class="nx">NULL</span><span class="p">);</span>
+<span class="w">        </span><span class="nx">info</span><span class="p">.</span><span class="k">type</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">X86_IRQ_ALLOC_TYPE_MSI</span><span class="p">;</span>
+<span class="w">        </span><span class="nx">info</span><span class="p">.</span><span class="nx">msi_dev</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">dev</span><span class="p">;</span>
+<span class="w">        </span><span class="c1">//最终调到intel_get_irq_domain,返回ir_msi_domain</span>
+<span class="w">        </span><span class="nx">domain</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">irq_remapping_get_irq_domain</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">info</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">domain</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">NULL</span><span class="p">)</span>
+<span class="w">                </span><span class="nx">domain</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">msi_default_domain</span><span class="p">;</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">domain</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">NULL</span><span class="p">)</span>
+<span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="o">-</span><span class="nx">ENOSYS</span><span class="p">;</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">msi_domain_alloc_irqs</span><span class="p">(</span><span class="nx">domain</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">dev</span><span class="o">-&gt;</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">nvec</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>我们先看一下<code>msi_domain_alloc_irqs</code> 的调用链，然后再一一分析相关函数</p>
+<div class="highlight"><pre><span></span><code><span class="w"> </span><span class="n">msi_domain_alloc_irqs</span>
+<span class="w">     </span><span class="o">-&gt;</span><span class="n">msi_domain_prepare_irqs</span>
+<span class="w">     </span><span class="o">-&gt;</span><span class="n">__irq_domain_alloc_irqs</span>
+<span class="w">     </span><span class="o">-&gt;</span><span class="n">msi_check_reservation_mode</span>
+<span class="w">     </span><span class="p">....</span><span class="w">   </span><span class="c1">//省略部分主要是有些分支判断这里先不list出来，后面涉及到的时候会具体介绍</span>
+</code></pre></div>
+
+<ul>
+<li>
+<p>msi_domain_prepare_irqs
+   调用<code>pci_msi_prepare</code> 函数做一些初始化的动作设置arg的type，msi_dev, cpumask等</p>
+</li>
+<li>
+<p>接着遍历这个设备msi_list当中的所有的msi_desc，在调用<code>__irq_domain_alloc_irqs</code> 为其分配irq之前先调用<code>pci_msi_domain_set_desc-&gt;pci_msi_domain_calc_hwirq</code> 为每个msi_desc分配一个全局唯一的初始ID即hwirq(关于它的作用我们后面再说)，接着我们来看一下__irq_domain_alloc_irqs的核心逻辑。我们先看一下这个核心函数的基本调用链，然后我们再对相关的函数一一分析</p>
+</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="w">      </span><span class="n">__irq_domain_alloc_irqs</span>
+<span class="w">          </span><span class="o">-&gt;</span><span class="n">irq_domain_alloc_descs</span>
+<span class="w">          </span><span class="o">-&gt;</span><span class="n">irq_domain_alloc_irq_data</span>
+<span class="w">          </span><span class="o">-&gt;</span><span class="n">irq_domain_alloc_irqs_hierarchy</span>
+<span class="w">          </span><span class="o">-&gt;</span><span class="n">irq_domain_insert_irq</span>
+</code></pre></div>
+
+<ul>
+<li>
+<p>首先调用 <code>irq_domain_alloc_descs</code> 分配irq_desc，其核心逻辑就是从 allocated_irqs这个bitmap里面分配未被使用的irq。</p>
+</li>
+<li>
+<p>接着调用irq_domain_alloc_irq_data，为每个irq的irq_data-&gt;domain以及其为所属domain的父domain，爷domain 的irq_data作相关数据初始化，逻辑如下：</p>
+</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="w">            </span><span class="n">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">nr_irqs</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">irq_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">irq_get_irq_data</span><span class="p">(</span><span class="n">virq</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="p">);</span>
+<span class="w">                </span><span class="n">irq_data</span><span class="o">-&gt;</span><span class="n">domain</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">domain</span><span class="p">;</span>
+
+<span class="w">                </span><span class="n">for</span><span class="w"> </span><span class="p">(</span><span class="n">parent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">domain</span><span class="o">-&gt;</span><span class="n">parent</span><span class="p">;</span><span class="w"> </span><span class="n">parent</span><span class="p">;</span><span class="w"> </span><span class="n">parent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">parent</span><span class="o">-&gt;</span><span class="n">parent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="n">irq_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">irq_domain_insert_irq_data</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span><span class="w"> </span><span class="n">irq_data</span><span class="p">);</span>
+<span class="w">                        </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">irq_data</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                                </span><span class="n">irq_domain_free_irq_data</span><span class="p">(</span><span class="n">virq</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">                                </span><span class="kr">return</span><span class="w"> </span><span class="o">-</span><span class="n">ENOMEM</span><span class="p">;</span>
+<span class="w">                        </span><span class="p">}</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>static struct irq_data *irq_domain_insert_irq_data(struct irq_domain *domain,
+                                                   struct irq_data *child)
+{
+        struct irq_data *irq_data;
+
+        irq_data = kzalloc_node(sizeof(*irq_data), GFP_KERNEL,
+                                irq_data_get_node(child));
+        if (irq_data) {
+                child-&gt;parent_data = irq_data;
+                irq_data-&gt;irq = child-&gt;irq;
+                irq_data-&gt;common = child-&gt;common;
+                irq_data-&gt;domain = domain;
+        }
+
+        return irq_data;
+}
+</code></pre></div>
+
+<ul>
+<li>然后调用<code>irq_domain_alloc_irqs_hierarchy</code>函数，具体逻辑如下：</li>
+</ul>
+<div class="highlight"><pre><span></span><code>int irq_domain_alloc_irqs_hierarchy(struct irq_domain *domain,
+                                    unsigned int irq_base,
+                                    unsigned int nr_irqs, void *arg)
+{
+        return domain-&gt;ops-&gt;alloc(domain, irq_base, nr_irqs, arg);
+}
+</code></pre></div>
+
+<p>注意这里的domain为ir_msi_domain，其irq_domain_ops如下</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">struct</span><span class="w"> </span><span class="n">irq_domain_ops</span><span class="w"> </span><span class="n">msi_domain_ops</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="o">.</span><span class="n">alloc</span><span class="w">          </span><span class="o">=</span><span class="w"> </span><span class="n">msi_domain_alloc</span><span class="p">,</span>
+<span class="w">        </span><span class="o">.</span><span class="n">free</span><span class="w">           </span><span class="o">=</span><span class="w"> </span><span class="n">msi_domain_free</span><span class="p">,</span>
+<span class="w">        </span><span class="o">.</span><span class="n">activate</span><span class="w">       </span><span class="o">=</span><span class="w"> </span><span class="n">msi_domain_activate</span><span class="p">,</span>
+<span class="w">        </span><span class="o">.</span><span class="n">deactivate</span><span class="w">     </span><span class="o">=</span><span class="w"> </span><span class="n">msi_domain_deactivate</span><span class="p">,</span>
+<span class="p">};</span>
+</code></pre></div>
+
+<p>所以其调用的alloc的callback为msi_domain_alloc函数，我们再来看看其具体实现：</p>
+<ul>
+<li>
+<p>irq_find_mapping(domain, hwirq)，首先通过上面提到的hwirq来判断是否已经在该domain已经进行映射。</p>
+</li>
+<li>
+<p>irq_domain_alloc_irqs_parent，先将它parent domain的irq也分配出来。由于ir_msi_domain的父domain为ir_domain其irq_domain_os为<code>inel_ir_domain_ops</code>其alloc为<code>intel_irq_remapping_alloc</code> 这个函数为中断remapping功能的核心所在，因此我们来仔细看一下这个函数：</p>
+<ul>
+<li>
+<p>首先还是继续调用irq_domain_alloc_irqs_parent，而ir_domain的父domain为x86_vector_domain。而<code>x86_vector_domain</code>的<code>alloc</code> callback函数的核心逻辑就是给相应的irq分配相关cpu lapic 上的中断vector，如果你在alloc_irq的时候指定了irq affinity的cpu_mask则直接从这些cpu的lapic当中分配；如果你没有指定则在系统所有的cpu当中找到合适的cpu lapic然后只是先reserve vector等到irq active的时候才真正去分配。这里面有三个概念一个是irq，一个是hwirq，还有一个就是vector，大家可能有点晕他们之间到底是什么关系？系统通过irq来找到irq_desc和irq_data，hwirq和irq在一个中断domain里面是一一映射的关系，然后vector是lapic最终能识别的东西也是irte表里面的最终要写入的中断number。</p>
+</li>
+<li>
+<p>接着调用alloc_irte函数去分配irte，其核心逻辑就是从上文所说的bitmap当中找到nvec个可用的interrupt remapping entry，同时返回开始位置即初始index</p>
+</li>
+<li>
+<p>接着为每个irq准备irte表即设置subhandle, index，还有就是上文提到irte中的其他field，最后就是设置msi or msi-x信息格式。</p>
+</li>
+</ul>
+</li>
+<li>
+<p>回到<code>msi_domain_alloc</code>函数，接着通过一个loop对irq所对应的irq_data相关信息做初始化</p>
+</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="w">        </span><span class="n">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">nr_irqs</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="c1">//msi_init为msi_domain_ops_init</span>
+<span class="w">                </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ops</span><span class="o">-&gt;</span><span class="n">msi_init</span><span class="p">(</span><span class="n">domain</span><span class="p">,</span><span class="w"> </span><span class="n">info</span><span class="p">,</span><span class="w"> </span><span class="n">virq</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">hwirq</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">arg</span><span class="p">);</span>
+<span class="w">                </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">ops</span><span class="o">-&gt;</span><span class="n">msi_free</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                                </span><span class="n">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="o">--</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">--</span><span class="p">)</span>
+<span class="w">                                        </span><span class="n">ops</span><span class="o">-&gt;</span><span class="n">msi_free</span><span class="p">(</span><span class="n">domain</span><span class="p">,</span><span class="w"> </span><span class="n">info</span><span class="p">,</span><span class="w"> </span><span class="n">virq</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="p">);</span>
+<span class="w">                        </span><span class="p">}</span>
+<span class="w">                        </span><span class="n">irq_domain_free_irqs_top</span><span class="p">(</span><span class="n">domain</span><span class="p">,</span><span class="w"> </span><span class="n">virq</span><span class="p">,</span><span class="w"> </span><span class="n">nr_irqs</span><span class="p">);</span>
+<span class="w">                        </span><span class="kr">return</span><span class="w"> </span><span class="n">ret</span><span class="p">;</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+
+<p>这里的<code>msi_domain_ops_init</code> 主要调用的函数如下</p>
+<div class="highlight"><pre><span></span><code><span class="n">msi_domain_ops_init</span>
+<span class="w">    </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">irq_domain_set_hwirq_and_chip</span><span class="w"> </span><span class="c1">//设置irq_data当中的hwirq，chip, chip_data</span>
+<span class="w">    </span><span class="o">-&gt;</span><span class="n">__irq_set_handler</span><span class="w">     </span><span class="c1">//如果msi_domain_info初始化了handler则进行设置</span>
+<span class="w">    </span><span class="o">-&gt;</span><span class="n">irq_set_handler_data</span><span class="w"> </span><span class="c1">//如果msi_domain_info初始化了handler_data则进行设置</span>
+
+<span class="w">    </span><span class="n">handler</span><span class="w"> </span><span class="kr">and</span><span class="w"> </span><span class="n">hanadler_data的具体情况如下</span>
+<span class="w">    </span><span class="o">================================</span>
+
+<span class="w">    </span><span class="n">static</span><span class="w"> </span><span class="n">struct</span><span class="w"> </span><span class="n">msi_domain_info</span><span class="w"> </span><span class="n">pci_msi_ir_domain_info</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="p">.</span><span class="n">flags</span><span class="w">          </span><span class="o">=</span><span class="w"> </span><span class="n">MSI_FLAG_USE_DEF_DOM_OPS</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">MSI_FLAG_USE_DEF_CHIP_OPS</span><span class="w"> </span><span class="o">|</span>
+<span class="w">                          </span><span class="n">MSI_FLAG_MULTI_PCI_MSI</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">MSI_FLAG_PCI_MSIX</span><span class="p">,</span>
+<span class="w">        </span><span class="p">.</span><span class="n">ops</span><span class="w">            </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">pci_msi_domain_ops</span><span class="p">,</span>
+<span class="w">        </span><span class="p">.</span><span class="n">chip</span><span class="w">           </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">pci_msi_ir_controller</span><span class="p">,</span>
+<span class="w">        </span><span class="p">.</span><span class="n">handler</span><span class="w">        </span><span class="o">=</span><span class="w"> </span><span class="n">handle_edge_irq</span><span class="p">,</span>
+<span class="w">        </span><span class="p">.</span><span class="n">handler_name</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;edge&quot;</span><span class="p">,</span>
+<span class="p">};</span>
+</code></pre></div>
+
+<ul>
+<li>分析完<code>msi_domain_alloc</code> ，至此<code>irq_domain_alloc_irqs_hierarchy</code>的逻辑基本看完了，之后接着往下看。</li>
+</ul>
+<div class="highlight"><pre><span></span><code>        for (i = 0; i &lt; nr_irqs; i++)
+                irq_domain_insert_irq(virq + i);
+</code></pre></div>
+
+<p><code>irq_domain_insert_irq</code>的核心逻辑就是完成virq跟hwirq在不同层级的irq domain中的mapping。</p>
+<p>上面把<code>__irq_domain_alloc_irqs</code> 的逻辑分析完了，回到<code>msi_domain_alloc_irqs</code> 继续往下走</p>
+<div class="highlight"><pre><span></span><code>can_reserve = msi_check_reservation_mode(domain, info, dev);
+
+========
+
+static bool msi_check_reservation_mode(struct irq_domain *domain,
+                                       struct msi_domain_info *info,
+                                       struct device *dev)
+{
+        struct msi_desc <span class="gs">*desc;</span>
+<span class="gs">        //bus_token通常情况下都是DOMAIN_BUS_PCI_MSI</span>
+<span class="gs">        if (domain-&gt;bus_token != DOMAIN_BUS_PCI_MSI)</span>
+<span class="gs">                return false;</span>
+<span class="gs">        //如果配置了CONFI_GENERIC_IRQ_RESERVATION_MODE的话这个flag是一定会被置上的</span>
+<span class="gs">        if (!(info-&gt;flags &amp; MSI_FLAG_MUST_REACTIVATE))</span>
+<span class="gs">                return false;</span>
+<span class="gs">        //CONFIG_PCI_MSI 默认enable，然后pci_mis_ignore_mask从代码上看没有被置1</span>
+<span class="gs">        if (IS_ENABLED(CONFIG_PCI_MSI) &amp;&amp; pci_msi_ignore_mask)</span>
+<span class="gs">                return false;</span>
+
+<span class="gs">        /*</span>
+         <span class="k">*</span> Checking the first MSI descriptor is sufficient. MSIX supports
+         <span class="k">*</span> masking and MSI does so when the maskbit is set.
+         */
+        desc = first_msi_entry(dev);
+        //通常情况下新设备一般都是MSIX
+        return desc-&gt;msi_attrib.is_msix || desc-&gt;msi_attrib.maskbit;
+}
+</code></pre></div>
+
+<p>接着往下看</p>
+<div class="highlight"><pre><span></span><code>        for_each_msi_entry(desc, dev) {
+                virq = desc-&gt;irq;
+                if (desc-&gt;nvec_used == 1)
+                        dev_dbg(dev, &quot;irq %d for MSI\n&quot;, virq);
+                else
+                        dev_dbg(dev, &quot;irq [%d-%d] for MSI\n&quot;,
+                                virq, virq + desc-&gt;nvec_used - 1);
+                /*
+                 <span class="k">*</span> This flag is set by the PCI layer as we need to activate
+                 <span class="k">*</span> the MSI entries before the PCI layer enables MSI in the
+                 <span class="k">*</span> card. Otherwise the card latches a random msi message.
+                 */
+                 //在创建ir_msi_domain的时候这个flag会被置上
+                if (!(info-&gt;flags &amp; MSI_FLAG_ACTIVATE_EARLY))
+                        continue;
+
+                irq_data = irq_domain_get_irq_data(domain, desc-&gt;irq);
+                if (!can_reserve)
+                        irqd_clr_can_reserve(irq_data);
+                ret = irq_domain_activate_irq(irq_data, can_reserve);
+                if (ret)
+                        goto cleanup;
+        }
+</code></pre></div>
+
+<p>上面的核心逻辑在<code>irq_domain_activate_irq(irq_data, can_reserve)</code> ，它最终会调到函数<code>__irq_domain_activate_irq</code> 它的具体逻辑如下：</p>
+<div class="highlight"><pre><span></span><code>static int __irq_domain_activate_irq(struct irq_data *irqd, bool reserve)
+{
+        int ret = 0;
+
+        if (irqd &amp;&amp; irqd-&gt;domain) {
+                struct irq_domain <span class="gs">*domain = irqd-&gt;domain;</span>
+
+<span class="gs">                if (irqd-&gt;parent_data)</span>
+<span class="gs">                        ret = __irq_domain_activate_irq(irqd-&gt;parent_data,</span>
+<span class="gs">                                                        reserve);</span>
+<span class="gs">                if (!ret &amp;&amp; domain-&gt;ops-&gt;activate) {</span>
+<span class="gs">                        ret = domain-&gt;ops-&gt;activate(domain, irqd, reserve);</span>
+<span class="gs">                        /*</span> Rollback in case of error */
+                        if (ret &amp;&amp; irqd-&gt;parent_data)
+                                __irq_domain_deactivate_irq(irqd-&gt;parent_data);
+                }
+        }
+        return ret;
+}
+</code></pre></div>
+
+<p>从实现可以看出它使用了递归逻辑优先调用最上层的domain的activate函数，从上篇文章的梳理可以知道系统当中整个domain的有关系如下：</p>
+<div class="highlight"><pre><span></span><code>x86_vector_domain ---- 父亲
+      |
+      |
+   ir_domain   -------- 儿子
+      |
+      |
+   ir_msi_domain -------孙子
+</code></pre></div>
+
+<p>我们先看一下x86_vector_domain的activate实现</p>
+<div class="highlight"><pre><span></span><code><span class="n">MANAGED_IRQ_SHUTDOWN_VECTOR</span>
+
+<span class="n">static</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">x86_vector_activate</span><span class="p">(</span><span class="k">struct</span><span class="w"> </span><span class="n">irq_domain</span><span class="w"> </span><span class="o">*</span><span class="n">dom</span><span class="p">,</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="n">irq_data</span><span class="w"> </span><span class="o">*</span><span class="n">irqd</span><span class="p">,</span>
+<span class="w">                               </span><span class="n">bool</span><span class="w"> </span><span class="n">reserve</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="n">apic_chip_data</span><span class="w"> </span><span class="o">*</span><span class="n">apicd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">apic_chip_data</span><span class="p">(</span><span class="n">irqd</span><span class="p">);</span>
+<span class="w">        </span><span class="k">unsigned</span><span class="w"> </span><span class="n">long</span><span class="w"> </span><span class="n">flags</span><span class="p">;</span>
+<span class="w">        </span><span class="kt">int</span><span class="w"> </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0</span><span class="p">;</span>
+
+<span class="w">        </span><span class="n">trace_vector_activate</span><span class="p">(</span><span class="n">irqd</span><span class="o">-&gt;</span><span class="n">irq</span><span class="p">,</span><span class="w"> </span><span class="n">apicd</span><span class="o">-&gt;</span><span class="n">is_managed</span><span class="p">,</span>
+<span class="w">                              </span><span class="n">apicd</span><span class="o">-&gt;</span><span class="n">can_reserve</span><span class="p">,</span><span class="w"> </span><span class="n">reserve</span><span class="p">);</span>
+
+<span class="w">        </span><span class="cm">/* Nothing to do for fixed assigned vectors */</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">apicd</span><span class="o">-&gt;</span><span class="n">can_reserve</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">!</span><span class="n">apicd</span><span class="o">-&gt;</span><span class="n">is_managed</span><span class="p">)</span>
+<span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="mh">0</span><span class="p">;</span>
+
+<span class="w">        </span><span class="n">raw_spin_lock_irqsave</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vector_lock</span><span class="p">,</span><span class="w"> </span><span class="n">flags</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">reserve</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">irqd_is_managed_and_shutdown</span><span class="p">(</span><span class="n">irqd</span><span class="p">))</span>
+<span class="w">                </span><span class="n">vector_assign_managed_shutdown</span><span class="p">(</span><span class="n">irqd</span><span class="p">);</span>
+<span class="w">        </span><span class="p">........</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>从上面的实现来看当reserve为true的时候，通过vector_assign_managed_shutdown为每个irq设置vector为<code>MANAGED_IRQ_SHUTDOWN_VECTOR</code> 即并没有分配实际的vector。接下来我们看一下ir_domain的activate函数</p>
+<div class="highlight"><pre><span></span><code>static int intel_irq_remapping_activate(struct irq_domain *domain,
+                                        struct irq_data *irq_data, bool reserve)
+{
+        intel_ir_reconfigure_irte(irq_data, true);
+        return 0;
+}
+</code></pre></div>
+
+<p>核心实现主要是由<code>intel_ir_reconfigure_irte</code>来实现，其主要把在alloc irq阶段创建的irte sync到ir_table里面。</p>
+<p>最后看一下ir_msi_domain的activate函数，具体如下</p>
+<div class="highlight"><pre><span></span><code>static int msi_domain_activate(struct irq_domain *domain,
+                               struct irq_data *irq_data, bool early)
+{
+        struct msi_msg msg[2] = { [1] = { }, };
+
+        BUG_ON(irq_chip_compose_msi_msg(irq_data, msg));
+        msi_check_level(irq_data-&gt;domain, msg);
+        irq_chip_write_msi_msg(irq_data, msg);
+        return 0;
+}
+</code></pre></div>
+
+<p>核心就是通过irq_chip_wirte_msi_msg将msi or msix msg写入到pcie设备的msi cap 的vector table里面。</p>
+<div class="highlight"><pre><span></span><code><span class="w">                </span><span class="nx">writel</span><span class="p">(</span><span class="nx">msg</span><span class="o">-&gt;</span><span class="nx">address_lo</span><span class="p">,</span><span class="w"> </span><span class="kd">base</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">PCI_MSIX_ENTRY_LOWER_ADDR</span><span class="p">);</span>
+<span class="w">                </span><span class="nx">writel</span><span class="p">(</span><span class="nx">msg</span><span class="o">-&gt;</span><span class="nx">address_hi</span><span class="p">,</span><span class="w"> </span><span class="kd">base</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">PCI_MSIX_ENTRY_UPPER_ADDR</span><span class="p">);</span>
+<span class="w">                </span><span class="nx">writel</span><span class="p">(</span><span class="nx">msg</span><span class="o">-&gt;</span><span class="nx">data</span><span class="p">,</span><span class="w"> </span><span class="kd">base</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">PCI_MSIX_ENTRY_DATA</span><span class="p">);</span>
+</code></pre></div>
+
+<p>至此已经完成了irq的整个分配流程，上面还有一个遗留的问题那就是每个irq所对应的vector并没有真正去分配，那具体什么时候去分配的呢？答案就是在request_irq的时候去分配的，同时会再次调用每个domain的activate函数。</p>
+<h4>虚拟化场景</h4>
+<p>我们先来看一下在设备直通场景该设备的中断是如何初始化的，具体的实现是从vfio_realize当中的<code>vfio_msix_early_setup</code>函数开始的。<strong>这个函数里面首先会去读初始化msix的table_bar, pba_bar, entries等信息，然后接着调用<code>vfio_pci_fixup_msix_region</code>对msix table 所在的bar mmap region进行修剪。这里背后的逻辑是说直通设备的mmio访问(即对bar的访问)除了第一次之外，后面都是按照内存通过EPT处理的即不再退出。但是misx中断处理这一块有些特殊，比如在guest里面我们可能修改网卡中断的绑核信息那这个时候vmm这一侧就必须要感知道因为要同步去修改irte的内容，所以这个函数的主要作用就是把msi_table相关的区域从region里面去掉，然后通过纯模拟的方式去实现guest对msix table的相关访问</strong>。交代完这个背景之后我们接着往下看</p>
+<div class="highlight"><pre><span></span><code><span class="n">vfio_add_capabilities</span>
+<span class="w">    </span><span class="o">-&gt;</span><span class="n">vfio_msix_setup</span><span class="o">-&gt;</span><span class="n">vfio_msix_setup</span><span class="o">-&gt;</span><span class="n">msix_init</span>
+</code></pre></div>
+
+<p><code>msix_init</code> 函数做的事情主要有在设备的pci配置空间添加msix cap，完善msix_table, msix pba在qemu侧模拟配置空间的位置信息，将所有的vector mask以及设置msix_table_mmio_ops和msix_pba_mmio_ops，同是把所有的中断vector mask掉。
+上面把qemu这一侧直通设备msix初始化的流程整理完了，后面的流程就是vm启动之后在相关驱动当中通过<code>__pci_enable_msix-&gt;msix_capability_init</code>去申请中断vector了，具体的逻辑可以参考上面非虚拟化场景的相关逻辑(区别在里msix msg的格式为compatibility format)。这里我们重点关注一下申请中断的过程中与后端是如何交互并且成功使能的。</p>
+<div class="highlight"><pre><span></span><code><span class="k">static</span><span class="w"> </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">msix_capability_init</span><span class="p">(</span><span class="n">struct</span><span class="w"> </span><span class="n">pci_dev</span><span class="w"> </span><span class="o">*</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">struct</span><span class="w"> </span><span class="n">msix_entry</span><span class="w"> </span><span class="o">*</span><span class="n">entries</span><span class="p">,</span>
+<span class="w">                                </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">nvec</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">struct</span><span class="w"> </span><span class="n">irq_affinity</span><span class="w"> </span><span class="o">*</span><span class="n">affd</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">        </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">ret</span><span class="p">;</span>
+<span class="w">        </span><span class="n">u16</span><span class="w"> </span><span class="n">control</span><span class="p">;</span>
+<span class="w">        </span><span class="nb nb-Type">void</span><span class="w"> </span><span class="n">__iomem</span><span class="w"> </span><span class="o">*</span><span class="n">base</span><span class="p">;</span>
+
+<span class="w">        </span><span class="o">......</span><span class="w"> </span><span class="o">//</span><span class="err">略去</span>
+
+<span class="w">        </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pci_msi_setup_msi_irqs</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">nvec</span><span class="p">,</span><span class="w"> </span><span class="n">PCI_CAP_ID_MSIX</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+<span class="w">                </span><span class="n">goto</span><span class="w"> </span><span class="n">out_avail</span><span class="p">;</span>
+
+<span class="w">        </span><span class="o">/*</span><span class="w"> </span><span class="n">Check</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="n">MSI</span><span class="w"> </span><span class="n">entries</span><span class="w"> </span><span class="n">honor</span><span class="w"> </span><span class="n">device</span><span class="w"> </span><span class="n">restrictions</span><span class="w"> </span><span class="o">*/</span>
+<span class="w">        </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">msi_verify_entries</span><span class="p">(</span><span class="n">dev</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+<span class="w">                </span><span class="n">goto</span><span class="w"> </span><span class="n">out_free</span><span class="p">;</span>
+
+<span class="w">        </span><span class="o">/*</span>
+<span class="w">         </span><span class="o">*</span><span class="w"> </span><span class="n">Some</span><span class="w"> </span><span class="n">devices</span><span class="w"> </span><span class="n">require</span><span class="w"> </span><span class="n">MSI</span><span class="o">-</span><span class="n">X</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">be</span><span class="w"> </span><span class="n">enabled</span><span class="w"> </span><span class="n">before</span><span class="w"> </span><span class="n">we</span><span class="w"> </span><span class="n">can</span><span class="w"> </span><span class="n">touch</span><span class="w"> </span><span class="n">the</span>
+<span class="w">         </span><span class="o">*</span><span class="w"> </span><span class="n">MSI</span><span class="o">-</span><span class="n">X</span><span class="w"> </span><span class="n">registers</span><span class="o">.</span><span class="w">  </span><span class="n">We</span><span class="w"> </span><span class="n">need</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">mask</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">vectors</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">prevent</span>
+<span class="w">         </span><span class="o">*</span><span class="w"> </span><span class="n">interrupts</span><span class="w"> </span><span class="n">coming</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">before</span><span class="w"> </span><span class="n">they</span><span class="s1">&#39;re fully set up.</span>
+<span class="w">         </span><span class="o">*/</span>
+<span class="w">        </span><span class="n">pci_msix_clear_and_set_ctrl</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">                                </span><span class="n">PCI_MSIX_FLAGS_MASKALL</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">PCI_MSIX_FLAGS_ENABLE</span><span class="p">);</span>
+
+<span class="w">        </span><span class="n">msix_program_entries</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">entries</span><span class="p">);</span>
+
+<span class="w">        </span><span class="o">......</span><span class="w"> </span><span class="o">//</span><span class="err">略去</span>
+
+<span class="w">        </span><span class="n">pci_msix_clear_and_set_ctrl</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">PCI_MSIX_FLAGS_MASKALL</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+
+<span class="w">        </span><span class="o">......</span><span class="w">  </span><span class="o">//</span><span class="err">略去</span>
+
+<span class="p">}</span>
+</code></pre></div>
+
+<p>上面是msix_capability_init的核心逻辑，其中申请中断的核心函数pci_msi_setup_msi_irqs里面跟后端需要进行交互的关键部分就是把msix msg写到后端即写msix table。那我们可以看一下qemu侧的相关实现</p>
+<div class="highlight"><pre><span></span><code><span class="nx">static</span><span class="w"> </span><span class="nx">void</span><span class="w"> </span><span class="nx">msix_table_mmio_write</span><span class="p">(</span><span class="nx">void</span><span class="w"> </span><span class="o">*</span><span class="nx">opaque</span><span class="p">,</span><span class="w"> </span><span class="nx">hwaddr</span><span class="w"> </span><span class="kd">addr</span><span class="p">,</span>
+<span class="w">                                  </span><span class="nx">uint64_t</span><span class="w"> </span><span class="nx">val</span><span class="p">,</span><span class="w"> </span><span class="nx">unsigned</span><span class="w"> </span><span class="nx">size</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="nx">PCIDevice</span><span class="w"> </span><span class="o">*</span><span class="nx">dev</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">opaque</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">int</span><span class="w"> </span><span class="nx">vector</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="kd">addr</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">PCI_MSIX_ENTRY_SIZE</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="nx">was_masked</span><span class="p">;</span>
+
+<span class="w">    </span><span class="nx">was_masked</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">msix_is_masked</span><span class="p">(</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">vector</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">pci_set_long</span><span class="p">(</span><span class="nx">dev</span><span class="o">-&gt;</span><span class="nx">msix_table</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="kd">addr</span><span class="p">,</span><span class="w"> </span><span class="nx">val</span><span class="p">);</span>
+<span class="w">    </span><span class="nx">msix_handle_mask_update</span><span class="p">(</span><span class="nx">dev</span><span class="p">,</span><span class="w"> </span><span class="nx">vector</span><span class="p">,</span><span class="w"> </span><span class="nx">was_masked</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>static void msix_handle_mask_update(PCIDevice *dev, int vector, bool was_masked)
+{
+    bool is_masked = msix_is_masked(dev, vector);
+    //由于此时vector还处于masked状态，所以直接返回。
+    if (is_masked == was_masked) {
+        return;
+    }
+
+    msix_fire_vector_notifier(dev, vector, is_masked);
+
+    if (!is_masked &amp;&amp; msix_is_pending(dev, vector)) {
+        msix_clr_pending(dev, vector);
+        msix_notify(dev, vector);
+    }
+}
+</code></pre></div>
+
+<p>注意由于这个时刻vector还是mask状态，所以只会更新后端msix_table的信息。后下面的逻辑当中要与后端进行交互的逻辑如下：</p>
+<div class="highlight"><pre><span></span><code><span class="w">        </span><span class="o">/*</span>
+<span class="w">         </span><span class="o">*</span><span class="w"> </span><span class="n">Some</span><span class="w"> </span><span class="n">devices</span><span class="w"> </span><span class="n">require</span><span class="w"> </span><span class="n">MSI</span><span class="o">-</span><span class="n">X</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">be</span><span class="w"> </span><span class="n">enabled</span><span class="w"> </span><span class="n">before</span><span class="w"> </span><span class="n">we</span><span class="w"> </span><span class="n">can</span><span class="w"> </span><span class="n">touch</span><span class="w"> </span><span class="n">the</span>
+<span class="w">         </span><span class="o">*</span><span class="w"> </span><span class="n">MSI</span><span class="o">-</span><span class="n">X</span><span class="w"> </span><span class="n">registers</span><span class="p">.</span><span class="w">  </span><span class="n">We</span><span class="w"> </span><span class="n">need</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">mask</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">vectors</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">prevent</span>
+<span class="w">         </span><span class="o">*</span><span class="w"> </span><span class="n">interrupts</span><span class="w"> </span><span class="n">coming</span><span class="w"> </span><span class="n">in</span><span class="w"> </span><span class="n">before</span><span class="w"> </span><span class="n">they</span><span class="o">&#39;</span><span class="n">re</span><span class="w"> </span><span class="n">fully</span><span class="w"> </span><span class="k">set</span><span class="w"> </span><span class="n">up</span><span class="p">.</span>
+<span class="w">         </span><span class="o">*/</span>
+<span class="w">        </span><span class="n">pci_msix_clear_and_set_ctrl</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">                                </span><span class="n">PCI_MSIX_FLAGS_MASKALL</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">PCI_MSIX_FLAGS_ENABLE</span><span class="p">);</span>
+
+<span class="w">        </span><span class="n">msix_program_entries</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">entries</span><span class="p">);</span>
+
+<span class="w">        </span><span class="p">......</span><span class="w"> </span><span class="c1">//略去</span>
+
+<span class="w">        </span><span class="n">pci_msix_clear_and_set_ctrl</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span><span class="w"> </span><span class="n">PCI_MSIX_FLAGS_MASKALL</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+</code></pre></div>
+
+<p>上面的逻辑当中<code>pci_msix_clear_and_set_ctrl</code> 这个函数主要是写设备的config_space相对应的后端处理函数为<code>vfio_pci_write_config</code>下面截取一下其核心的实现进行相关的分析：</p>
+<div class="highlight"><pre><span></span><code><span class="o">......</span>
+<span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">pdev</span><span class="o">-&gt;</span><span class="nx">cap_present</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="nx">QEMU_PCI_CAP_MSIX</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="w">        </span><span class="nx">ranges_overlap</span><span class="p">(</span><span class="kd">addr</span><span class="p">,</span><span class="w"> </span><span class="nx">len</span><span class="p">,</span><span class="w"> </span><span class="nx">pdev</span><span class="o">-&gt;</span><span class="nx">msix_cap</span><span class="p">,</span><span class="w"> </span><span class="nx">MSIX_CAP_LENGTH</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">int</span><span class="w"> </span><span class="nx">is_enabled</span><span class="p">,</span><span class="w"> </span><span class="nx">was_enabled</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">msix_enabled</span><span class="p">(</span><span class="nx">pdev</span><span class="p">);</span>
+
+<span class="w">        </span><span class="nx">pci_default_write_config</span><span class="p">(</span><span class="nx">pdev</span><span class="p">,</span><span class="w"> </span><span class="kd">addr</span><span class="p">,</span><span class="w"> </span><span class="nx">val</span><span class="p">,</span><span class="w"> </span><span class="nx">len</span><span class="p">);</span>
+
+<span class="w">        </span><span class="nx">is_enabled</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">msix_enabled</span><span class="p">(</span><span class="nx">pdev</span><span class="p">);</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(!</span><span class="nx">was_enabled</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">is_enabled</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nx">vfio_msix_enable</span><span class="p">(</span><span class="nx">vdev</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">was_enabled</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">!</span><span class="nx">is_enabled</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nx">vfio_msix_disable</span><span class="p">(</span><span class="nx">vdev</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="o">......</span>
+</code></pre></div>
+
+<p>因为设置了<code>PCI_MSIX_FLAGS_ENABLE</code> 所以在qemu这一端会走到vfio_msix_enable的逻辑，这个函数主要做的事情就是在vfio这一层enable vector 0中的中断到qemu侧另外就是为这个设备的<code>msix_vector_use_notifier</code> 和<code>msix_vector_release_notifier</code>。接着再回到guest里面的逻辑，<code>msix_program_entries</code> 会将所有的中断vector mask掉，然后再clear掉msix ctr flag当中的<code>PCI_MSIX_FLAGS_MASKALL</code> 位。讲到这里可能很多人就会问vector到底是在什么时候unmask的呢？答案就是在guest里面调用request_irq的时候：</p>
+<div class="highlight"><pre><span></span><code><span class="n">request_irq</span><span class="o">-&gt;</span><span class="n">request_threaded_irq</span><span class="o">-&gt;</span><span class="n">__setup_irq</span><span class="o">-&gt;</span><span class="n">irq_startup</span><span class="o">-&gt;</span><span class="n">__irq_startup</span><span class="o">-&gt;</span><span class="n">unmask_irq</span><span class="o">-&gt;</span><span class="n">pci_msi_unmask_irq</span>
+</code></pre></div>
+
+<p>上面的逻辑我就不细讲了，大家如果有兴趣可以自己去翻阅一下相关的代码。我们着重来看一下qemu这一侧的相关逻辑。由于要unmask vector所以要写msix_table mmio，后端对应的具体ops函数如下</p>
+<div class="highlight"><pre><span></span><code><span class="n">msix_table_mmio_write</span><span class="w"> </span><span class="o">-&gt;</span><span class="n">msix_fire_vector_notifier</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>static void msix_fire_vector_notifier(PCIDevice *dev,
+                                      unsigned int vector, bool is_masked)
+{
+    MSIMessage msg;
+    int ret;
+
+    if (!dev-&gt;msix_vector_use_notifier) {
+        return;
+    }
+    if (is_masked) {
+        dev-&gt;msix_vector_release_notifier(dev, vector);
+    } else {
+        //由于是unmask，所以具体的执行逻辑如下
+        msg = msix_get_message(dev, vector);
+        ret = dev-&gt;msix_vector_use_notifier(dev, vector, msg);
+        assert(ret &gt;= 0);
+    }
+}
+</code></pre></div>
+
+<p><code>msix_vector_use_notifier</code> 调用的callback为<code>vfio_msix_vector_use</code>其最终调用的函数为<code>vfio_msix_vector_do_use</code> 。下面我们着重看一下这个函数的具体逻辑是什么</p>
+<ul>
+<li>
+<p>首先为该vector的interrupt EventNotifier初始化eventfd，然后为这个fd设置handler函数为<code>vfio_msi_interrupt</code></p>
+</li>
+<li>
+<p>接着调用<code>vfio_add_kvm_msi_virq</code> ，这个函数里面首先为vector的kvm_interrupt 这个EventNotifier寝化eventfd；接着调用<code>kvm_irqchip_add_msi_route</code>在这个函数里面首先在used_gsi_bitmap里找到一个可用的virq，接着为这个vector创建 <code>kvm_irq_routing_entry</code>其核心逻辑就是在kvm_state的irq_routes增加一个新的entry，同时把used_gsi_bitmap给更新掉；接着调用<code>kvm_arch_add_msi_route_post</code> ，这个函数里面会新建一个<code>MSIRouteEntry</code>，然后将其加到全局的<code>msi_route_list</code>里面。最后通过<code>kvm_irqchip_commit_routes</code>通过<code>KVM_SET_GSI_ROUTING</code> 这个ioctl来设置irq routing(注意这里qemu会把kvm_state-&gt;irq_routes作为一个整体来提交)，具体的逻辑我们需要到kvm里面看一下相关的逻辑。</p>
+</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="w">  </span><span class="n">setup_routing_entry</span><span class="o">-&gt;</span><span class="n">kvm_set_routing_entry</span>
+</code></pre></div>
+
+<p>其核心逻辑就是将qemu侧的routing entry 添加到<code>kvm-&gt;irq_routing</code> 这个irq路由表里面，然后不同类型的路由其对应的表项也是不同的，比如在msi or msix的情况下表项是这样的</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="nx">e</span><span class="o">-&gt;</span><span class="nx">set</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">kvm_set_msi</span><span class="p">;</span><span class="w"> </span><span class="c1">//具体的中断delivery 函数</span>
+<span class="w">    </span><span class="nx">e</span><span class="o">-&gt;</span><span class="nx">msi</span><span class="p">.</span><span class="nx">address_lo</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">ue</span><span class="o">-&gt;</span><span class="nx">u</span><span class="p">.</span><span class="nx">msi</span><span class="p">.</span><span class="nx">address_lo</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">e</span><span class="o">-&gt;</span><span class="nx">msi</span><span class="p">.</span><span class="nx">address_hi</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">ue</span><span class="o">-&gt;</span><span class="nx">u</span><span class="p">.</span><span class="nx">msi</span><span class="p">.</span><span class="nx">address_hi</span><span class="p">;</span>
+<span class="w">    </span><span class="nx">e</span><span class="o">-&gt;</span><span class="nx">msi</span><span class="p">.</span><span class="nx">data</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">ue</span><span class="o">-&gt;</span><span class="nx">u</span><span class="p">.</span><span class="nx">msi</span><span class="p">.</span><span class="nx">data</span><span class="p">;</span>
+</code></pre></div>
+
+<p>然后再回到<code>vfio_add_kvm_msi_virq</code> 函数接着调用<code>kvm_irqchip_add_irqfd_notifier_gsi</code> 在kvm侧添加irqfd</p>
+<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="n">kvm_irqfd</span><span class="w"> </span><span class="n">irqfd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="p">.</span><span class="n">fd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">fd</span><span class="p">,</span><span class="w">  </span><span class="c1">// vector-&gt;kvm_interrupt 的eventfd</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gsi</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">virq</span><span class="p">,</span>
+<span class="w">        </span><span class="p">.</span><span class="n">flags</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">assign</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="mh">0</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">KVM_IRQFD_FLAG_DEASSIGN</span><span class="p">,</span><span class="w"> </span><span class="c1">//assign 为true</span>
+<span class="w">    </span><span class="p">};</span>
+
+
+<span class="n">kvm_vm_ioctl</span><span class="p">(</span><span class="n">s</span><span class="p">,</span><span class="w"> </span><span class="n">KVM_IRQFD</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">irqfd</span><span class="p">);</span>
+</code></pre></div>
+
+<p>如上面所示通过KVM_IRQFD再次call到kvm里面具体调用的函数<code>kvm_irqfd</code>，最终调用<code>kvm_irqfd_assign</code> 函数。这个函数的具体逻辑在kvm里面创建一个相应的<code>kvm_kernel_irqfd</code>，然后为这个irqfd初始化 irq inject，irq shutdown函数以及相应的eventfd。然后把irqfd加到<code>kvm-&gt;irqfds.items</code>里面。如果kvm enable 了irq_bypass则需要为这个irqfd初始化consumer相关的数据结构。
+再回到<code>vfio_msix_vector_do_use</code> 这个函数接着往下看：</p>
+<div class="highlight"><pre><span></span><code><span class="o">........</span>
+
+<span class="w">    </span><span class="nt">if</span><span class="w"> </span><span class="o">(</span><span class="nt">vdev-</span><span class="o">&gt;</span><span class="nt">nr_vectors</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="nt">nr</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nt">1</span><span class="o">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="err">vfio_disable_irqindex(&amp;vdev-&gt;vbasedev,</span><span class="w"> </span><span class="err">VFIO_PCI_MSIX_IRQ_INDEX)</span><span class="p">;</span>
+<span class="w">        </span><span class="err">vdev-&gt;nr_vectors</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">nr</span><span class="w"> </span><span class="err">+</span><span class="w"> </span><span class="err">1</span><span class="p">;</span>
+<span class="w">        </span><span class="err">ret</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">vfio_enable_vectors(vdev,</span><span class="w"> </span><span class="err">true)</span><span class="p">;</span>
+<span class="w">        </span><span class="err">if</span><span class="w"> </span><span class="err">(ret)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">            </span><span class="err">error_report(&quot;</span><span class="n">vfio</span><span class="p">:</span><span class="w"> </span><span class="n">failed</span><span class="w"> </span><span class="kc">to</span><span class="w"> </span><span class="n">enable</span><span class="w"> </span><span class="n">vectors</span><span class="p">,</span><span class="w"> </span><span class="o">%</span><span class="n">d</span><span class="err">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ret</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+
+<span class="o">.......</span>
+</code></pre></div>
+
+<p>核心逻辑如上面所示，从上面的实现所看首先调用<code>vfio_disable_irqindex</code>，我们先看一下这个函数的具体实现</p>
+<div class="highlight"><pre><span></span><code>void vfio_disable_irqindex(VFIODevice *vbasedev, int index)
+{
+    struct vfio_irq_set irq_set = {
+        .argsz = sizeof(irq_set),
+        .flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER,
+        .index = index,
+        .start = 0,
+        .count = 0,
+    };
+
+    ioctl(vbasedev-&gt;fd, VFIO_DEVICE_SET_IRQS, &amp;irq_set);
+}
+</code></pre></div>
+
+<p>在vfio侧其调用逻辑如下</p>
+<div class="highlight"><pre><span></span><code><span class="n">vfio_pci_set_msi_trigger</span><span class="o">-&gt;</span><span class="n">vfio_msi_disable</span>
+</code></pre></div>
+
+<p>具体的函数实现我这里就不贴出来了，其主要做的事情有
+1. 释放irq bypass 相关数据结构，释放eventfd等
+2. <code>pci_free_irq_vectors</code>  disable掉msix，释放为这个设备申请的irq
+3. 将num_ctx清0 然后设置irq_type为<code>VFIO_PCI_NUM_IRQS</code></p>
+<p>调完disable函数之后，qemu里面紧接着调用<code>vfio_enable_vectors</code>，我们把这个函数的重点部分解析一下，首先创建一个irq_set</p>
+<div class="highlight"><pre><span></span><code>    struct vfio_irq_set <span class="gs">*irq_set;</span>
+<span class="gs">    ........</span>
+<span class="gs">    irq_set = g_malloc0(argsz);</span>
+<span class="gs">    irq_set-&gt;argsz = argsz;</span>
+<span class="gs">    irq_set-&gt;flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;</span>
+<span class="gs">    irq_set-&gt;index = msix ? VFIO_PCI_MSIX_IRQ_INDEX : VFIO_PCI_MSI_IRQ_INDEX;</span>
+<span class="gs">    irq_set-&gt;start = 0;</span>
+<span class="gs">    irq_set-&gt;count = vdev-&gt;nr_vectors;</span>
+<span class="gs">    fds = (int32_t *</span>)&amp;irq_set-&gt;data;
+</code></pre></div>
+
+<p>然后接着将目前为止将要和已经enable的vector的fd (每个vector的kvm_interrupt eventfd) 全部添加到fds，接着调用ioctl <code>VFIO_DEVICE_SET_IRQS</code> call到vfio，我们接着看vfio当中这一块的逻辑</p>
+<div class="highlight"><pre><span></span><code><span class="n">vfio_pci_set_msi_trigger</span><span class="o">-&gt;</span><span class="n">vfio_msi_enable</span>
+<span class="w">                        </span><span class="o">-&gt;</span><span class="n">vfio_msi_set_block</span>
+</code></pre></div>
+
+<p>vfio_msi_enable这个函数最核心的逻辑就是为这个直通设备申请物理的irq(之前申请的irq在把该设备从原生driver remove的时候已经free掉了)，具体调用逻辑如下</p>
+<div class="highlight"><pre><span></span><code><span class="n">pci_alloc_irq_vectors</span><span class="o">-&gt;</span><span class="n">pci_alloc_irq_vectors_affinity</span><span class="o">-&gt;</span><span class="n">__pci_enable_msix_range</span>
+</code></pre></div>
+
+<p>是不是看到了跟非虚拟化场景下的一样的函数<code>__pci_enable_msix_range</code> , 具体实现大家可以参照上一节当中的相关实现逻辑；接着往下看vfio_msi_set_bock</p>
+<div class="highlight"><pre><span></span><code><span class="p">.........</span>
+
+<span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">j</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">start</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="nf">count</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="err">!</span><span class="n">ret</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">,</span><span class="w"> </span><span class="n">j</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="nc">int</span><span class="w"> </span><span class="n">fd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">fds</span><span class="w"> </span><span class="vm">?</span><span class="w"> </span><span class="n">fds</span><span class="o">[</span><span class="n">i</span><span class="o">]</span><span class="w"> </span><span class="err">:</span><span class="w"> </span><span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+<span class="w">                </span><span class="n">ret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">vfio_msi_set_vector_signal</span><span class="p">(</span><span class="n">vdev</span><span class="p">,</span><span class="w"> </span><span class="n">j</span><span class="p">,</span><span class="w"> </span><span class="n">fd</span><span class="p">,</span><span class="w"> </span><span class="n">msix</span><span class="p">);</span>
+<span class="w">        </span><span class="err">}</span>
+
+<span class="p">.........</span>
+</code></pre></div>
+
+<p>关键函数为<code>vfio_msi_set_vector_signal</code> ，其核心实现就是通过request_irq 为该直通设备注册中断处理函数vfio_msihandler同时register irq bypass producer。而vfio_msihandler就是通过之前注册的irqfd 将相应的中断delivery到vm里面。</p>
+<h3>总结和思考</h3>
+<p>interrupt remapping的功能最初是为了解决虚拟化中断delivery的问题而提出的，但是从我们的整篇文章的分析来看完全可以不需要这个remapping的功能。为什么这样说呢？因为通过分析我们可以看到直通设备中断注入过程是硬件中断先打到host，然后wakeup 相应的msi_handler；接着msi_handler通过kvm里面注册的irqfd 触发kvm_set_msi将相应的vector注到vm里面。但是intel什么还要搞这个呢？这个就不得不说直通设备的另外一种中断注入方式post interrupt，后面我们再来详细介绍一下。</p>
+
+                <!-- 图片画廊 -->
+            </main>
+
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">iommu</span>
+                    <span class="tag-cloud-item">interrut remapping</span>
+                </div>
+            </div>
+
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">六 05 三月 2022</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
+
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
+
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
+<footer>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+    </body>
+    <!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>

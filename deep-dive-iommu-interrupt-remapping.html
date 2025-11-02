@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh_cn">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="序言 iommu系列二主要介绍了dma remapping的工作原理，这一篇我们来介绍一下iommu 中断重映射的feature在虚拟化场景和非虚拟化场景下是如何工作的。 底层硬件工作原理 谈到中断大家可能不太会直接联想到iommu这个硬件，而事实 …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="iommu, interrupt remapping, articles, " />
+        <title>深入了解iommu系列三：interrupt remapping 底层硬件工作原理和驱动初始化  · KernelNote - AI基础设施技术博客
+</title>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LRRMJ08SPD');
+</script>
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
+
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
+                深入了解iommu系列三：interrupt remapping 底层硬件工作原理和驱动初始化
+            </h1>
+
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2022-02-15T00:00:00+08:00">二 15 二月 2022</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">iommu</span>
+                    <span class="article-tag">interrupt remapping</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <h3>序言</h3>
+<p>iommu系列二主要介绍了dma remapping的工作原理，这一篇我们来介绍一下iommu 中断重映射的feature在虚拟化场景和非虚拟化场景下是如何工作的。</p>
+<h3>底层硬件工作原理</h3>
+<p>谈到中断大家可能不太会直接联想到iommu这个硬件，而事实上在虚拟化未出现之前中断的处理确实不需要iommu的参与。interrupt remapping of iommu的引入主要是为了解决虚拟化场景直通设备的中断投递问题，由于iommu的最重要的功能是dma处理，因此在interrupt  remapping enable的情况下，系统当中所有以message signal 的形式来触发的中断都是需要iommu来处理的。或者有人会问为什么是message singal interrupt(msi 或者msix)呢？因为所有的msi中断最底层的实现方式是往特定的地址(0xFEEX_XXXXh)触发一个dma write操作，iommu也是通过0xFEE 这个prefix来判断某个dma write 是否是一个中断请求。引入了iommu之后，系统当中pcie或者pci设备，ioapic，hpet(有些平台hpet是支持msi中断的)等这些设备的msi or msix中断请求都会经过iommu进行处理。</p>
+<p>为了让大家更好的理解interrupt remapping的工作机制，我们对比一下相关设备在remapping和非remapping这两种模式下的中断投递和处理方式(这两种方式的对比都是在系统引入了iommu的背景下)。首先介绍一下ioapic，ioapic在系统硬件架构当中所处的位置如图1所示：</p>
+<p><img alt="ioapic" src="images/ioapic.png"></p>
+<p><center> 图1</center>
+通常情况下操作系统是通过acpi表来发现ioapic的，当然有些平台也已经支持通过pcie协议来发现ioapic，其他外设比如大部分的legacy设备的中断都是需要通过ioapic进行路由，那么不同设备的中断是如何通过ioapic投递的呢？原来ioapic维护了一个redirection table，当某个设备中断到达ioapic时，它会根据Redirection Table格式化出一个message  signal interrupt 发往相应的cpu。具体的redirection table entry的格式如下：</p>
+<p><img alt="ioapic_redirection_table" src="images/ioapic_redirection_table.png"></p>
+<p><center> 图2 </center> </p>
+<p>接着我们看一下在interrupt remapping enable的场景下，ioapic的redirection table entry的格式是什么样的。</p>
+<p><img alt="rte_remapping" src="images/rte_remapping.png"></p>
+<p><center>图3</center></p>
+<p>通过图2和图3的对比我们能够看到一些不一样的地方，这里我们总结一下RTE在interrupt remapping 模式下新引入的一些字段说明：</p>
+<ul>
+<li>bits 49:63 对应的是<strong>interrupt_index[14:0]</strong>，bit 11对应的是<strong>interrup_index[15]</strong> 即第15位，关于这个16bits的interrupt_index后面会详细说明</li>
+<li>bit 48表示是否为remapping的中断格式，所以必须要置1</li>
+<li>bits 10:8 表示<strong>SHV(SubHandle Valid)</strong>，强制设置为000b表示SHV不可用。关于SHV后面也会讲到
+至于其他两种模式都有的字段比如vector, Trigger Mode, delivery status等需要对齐。</li>
+</ul>
+<p>下面我来看一下pci或者pcie设备的msi or msix 中断在两种模式的差异点，先来看一下非remapping模式下message address 和message data的format。</p>
+<p><img alt="msi_address" src="images/msi_address.png"></p>
+<p><center>图4 </center></p>
+<p><img alt="message_data" src="images/message_data.png">
+<center>图5</center></p>
+<p>图4和图5呈现的是在非remapping模式下msi的address和data的相关field，下面我们重点来看一下remapping模式下的address和data。</p>
+<p><img alt="remap_msi" src="images/remap_msi.png"></p>
+<p><center>图6</center></p>
+<p>对照图6还是总结一下在remapping模式下的不同点：</p>
+<ul>
+<li>address register bit 4需要置为1，表示为interrupt remapping模式。</li>
+<li>adress register bit 3 表示的是SubHandle Valid(SHV)，这里强制为1即SubHandle是有效的。</li>
+<li>address register bits 19:5 表示的是interrupt_index的0~14位，bit 2表示的是interrupt_index的第15位。这里的interrup_index指的是<strong>Interrupt Remapping Table Entry(IRTE)</strong> 它里面存储的是interrupt 请求的具体内容。通常情况下pci或者pcie设备一般都会使能多个这里以N来代替中断vector，也就意味着我们要为这个N 个vector分配N个连续的IRTE enteries。这里的interrup_index指的是第一个 IRTE entry，因为SHV是enable的所以后面的N-1个连续的IRTE entries是通过base的interrupt_index加上这个subhandle来寻址的。</li>
+<li>第一个 IRTE entry的data register 全部设置为0，后N-1的IRTE的data register bits 15:0 设置为subhandle。</li>
+</ul>
+<p>上面讲了IRTE，讲了SHV，讲了interrupt_index，讲了subhandle，这些概念之间有什么关联？iommu硬件又是怎么使用这些信息的呢？要回答好这些问题我们还是要从最底层来看，先来看一下在interrupt remapping模式下以iommu视角看到的message signal interrupt request是什么样子的？</p>
+<p><img alt="remap_intrq" src="images/remap_intrq.png">
+<center>图7</center>
+当iommu解析出这些信息之后计算irte的索引的公式如下：</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">SHV</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">irte_index</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">address</span><span class="p">.</span><span class="nx">handle</span><span class="p">;</span>
+<span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">irte_index</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">address</span><span class="p">.</span><span class="nx">handle</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">subhandle</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>这个HANDLE等价于图6当中的interrupt_index。找到相应的irte index之后，iommu硬件就会结合相关的信息把中断delivery到相应的cpu上，具体的irte的格式如下：</p>
+<p><img alt="irte" src="images/irte.png"></p>
+<p><center>图8</center>
+从图8中是不是看到了很多熟悉的field，其实就是把一些非remapping模式下的field移到了IRTE entry里面。</p>
+<p>正常情况下iommu硬件是能够兼容interrupt remapping和非remapping这两中断请求的，下面看一下非remapping模式下的中断请求的格式。</p>
+<p><img alt="common_intq" src="images/common_intq.png"></p>
+<p><center>图9</center>
+讲完了这两中不同中断模式的interrupt request 格式，下面我们来讲一下iommu硬件是如何兼容这两种中断请求的：</p>
+<ul>
+<li>iommu硬件通过0xFEE来确认到来的dma写请求是不是一个中断请求。</li>
+<li>如果interrupt remapping没有enable(IRES 字段在Global Status Register没有置上)，则中断按照Compatibility Format interrupt request来处理。</li>
+<li>如果interrupt remapping enable了即IRES在Global Status Register置位，那么中断具体处理流程如下：<ul>
+<li>如果interrupt request 是compatibility format则具体处理如下：<ul>
+<li>如果Extended interrupt Mode enable(Interrupt Remapping Table Address register 的EIME 字段被置上)或者Compatibility format interrupts 被disabled(Global Status register的CFIS被clear)则这个中断请求将会被block；如果上述两个条件都不成立则中断将会pass through即bypass remapping。</li>
+</ul>
+</li>
+<li>如果interrupt request 是 remapping 格式则处理流程如下：<ul>
+<li>首先检查reserved 字段是否为0，如果不为0则中断请求被block；如果为0则source-id, Handle, SHV，Subhandle将被解析出来</li>
+<li>根据解析出来的相关信息计算irte_index，如果irte_index大于interrupt remapping tables size则中断请求被block</li>
+<li>如果irte_index是一个在正常范围内的值则从interrupt remapping table或者从interrupt Entry Cache里面获取相对应的IRTE。</li>
+<li>如果IRTE存在，则iommu硬件还需要确认SVT, SID, SQ这些字段是否正确。</li>
+</ul>
+</li>
+<li>如果IRTE的Mode field clear(即IM=0，如果IM=1则表示这个中断是post interrupt，关于pi我们下一篇再细讲)<ul>
+<li>iommu 硬件根据interrupt remapping 格式对IRTE进行解析，如果发现某些filed异常则该中断被block</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>讲完了这些大家可能已经理解中断remapping是怎么一回事了，这个feature的重点就在<strong>remapping</strong>上。为什么要remapping呢？首先，通过上面的分析大家也都应该知道在非虚拟化的场景下相关设备的中断处理一定是不需要remapping的，正如前面的行文所说有个CFIS field来决定在中断remapping 功能enable的情况下如果CFIS set则就可以处理Compatibility format interrupts，具体描述如下：</p>
+<p><img alt="cfis.png" src="images/cfis.png">
+<center>图10</center></p>
+<p>从上面的解释可以看到在interrupt remapping enabled的场景下，<strong>CFIS只有在x2apic disabled的情况下它才能起效果。但是目前主流的x86的服务器x2apic都是打开的，也就是说CFIS就是这个摆设根本用不起来。所以只要是iommu打开的场景下，相关设备的msi or msix中断一定是走中断remapping的(即使你的设备并不是直通给vm的)，无形中降低了中断的处理效率。从这一点也能说明intel在设计interrup remapping的时候考虑的并不是很全面</strong>。</p>
+<p>我们接着说虚拟化场景，如果你想把pci or pcie设备直通给虚拟机则中断remapping是必须的，原因其实也很简单：因为pcie设备在host上使能的时候其原生驱动会为其分配中断irq，那么当其直通到vm里面的时候guest os会再一次为其分配中断irq，那这两者如果要关联起来只能通过中断remapping的方式。</p>
+<h3>OS层代码实现</h3>
+<h5>interrupt remapping初始化</h5>
+<p>中断 remapping feature的初始化是从<code>enable_IR_x2apic</code> 这个函数开始的，具体如下</p>
+<div class="highlight"><pre><span></span><code><span class="nt">void</span><span class="w"> </span><span class="nt">__init</span><span class="w"> </span><span class="nt">enable_IR_x2apic</span><span class="o">(</span><span class="nt">void</span><span class="o">)</span>
+<span class="p">{</span>
+<span class="w">        </span><span class="err">unsigned</span><span class="w"> </span><span class="err">long</span><span class="w"> </span><span class="err">flags</span><span class="p">;</span>
+<span class="w">        </span><span class="err">int</span><span class="w"> </span><span class="err">ret,</span><span class="w"> </span><span class="err">ir_stat</span><span class="p">;</span>
+
+<span class="w">        </span><span class="err">if</span><span class="w"> </span><span class="err">(skip_ioapic_setup)</span>
+<span class="w">                </span><span class="err">return</span><span class="p">;</span>
+
+<span class="w">        </span><span class="err">ir_stat</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">irq_remapping_prepare()</span><span class="p">;</span>
+<span class="w">        </span><span class="err">if</span><span class="w"> </span><span class="err">(ir_stat</span><span class="w"> </span><span class="err">&lt;</span><span class="w"> </span><span class="err">0</span><span class="w"> </span><span class="err">&amp;&amp;</span><span class="w"> </span><span class="err">!x2apic_supported())</span>
+<span class="w">                </span><span class="err">return</span><span class="p">;</span>
+
+<span class="w">        </span><span class="err">ret</span><span class="w"> </span><span class="err">=</span><span class="w"> </span><span class="err">save_ioapic_entries()</span><span class="p">;</span>
+<span class="w">        </span><span class="err">if</span><span class="w"> </span><span class="err">(ret)</span><span class="w"> </span><span class="err">{</span>
+<span class="w">                </span><span class="err">pr_info(&quot;Saving</span><span class="w"> </span><span class="err">IO-APIC</span><span class="w"> </span><span class="err">state</span><span class="w"> </span><span class="n">failed</span><span class="p">:</span><span class="w"> </span><span class="o">%</span><span class="n">d</span><span class="err">\</span><span class="n">n</span><span class="err">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ret</span><span class="p">);</span>
+<span class="w">                </span><span class="err">return</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="nt">local_irq_save</span><span class="o">(</span><span class="nt">flags</span><span class="o">);</span>
+<span class="w">        </span><span class="nt">legacy_pic-</span><span class="o">&gt;</span><span class="nt">mask_all</span><span class="o">();</span>
+<span class="w">        </span><span class="nt">mask_ioapic_entries</span><span class="o">();</span>
+
+<span class="w">        </span><span class="c">/* If irq_remapping_prepare() succeeded, try to enable it */</span>
+<span class="w">        </span><span class="nt">if</span><span class="w"> </span><span class="o">(</span><span class="nt">ir_stat</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="nt">0</span><span class="o">)</span>
+<span class="w">                </span><span class="nt">ir_stat</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nt">try_to_enable_IR</span><span class="o">();</span>
+<span class="w">        </span><span class="c">/* ir_stat contains the remap mode or an error code */</span>
+<span class="w">        </span><span class="nt">try_to_enable_x2apic</span><span class="o">(</span><span class="nt">ir_stat</span><span class="o">);</span>
+
+<span class="w">        </span><span class="nt">if</span><span class="w"> </span><span class="o">(</span><span class="nt">ir_stat</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="nt">0</span><span class="o">)</span>
+<span class="w">                </span><span class="nt">restore_ioapic_entries</span><span class="o">();</span>
+<span class="w">        </span><span class="nt">legacy_pic-</span><span class="o">&gt;</span><span class="nt">restore_mask</span><span class="o">();</span>
+<span class="w">        </span><span class="nt">local_irq_restore</span><span class="o">(</span><span class="nt">flags</span><span class="o">);</span>
+<span class="err">}</span>
+</code></pre></div>
+
+<p>先说一下<code>irq_remapping_prepare</code>，其核心逻辑调用<code>intel_irq_remap_os</code> 的<code>prepare</code>即<code>intel_prepare_irq_remapping</code>函数，接下来我们看一下这个函数的具体实现逻辑。首先会去解析dmar_table如果大家读过iommu初始化那篇文章应该是有所了解，接着会通过dmar的flag来判断是否支持interrup remapping，具体见下图中flag示意</p>
+<p><img alt="dmar_acpi_table2" src="images/dmar_acpi_table.png">
+<center> 图11</center>
+接着判断系统当中的ioapic是不是也都已经与enable interrupt remapping的iommu相关联起来了。然后遍历所有的iommu硬件是不是都支持irq remapping，主要是判断DMAR_ECAP_REG寄存器的bit 3是否置位如为1则说明支持irq remapping，具体如下</p>
+<p><img alt="ecap_reg" src="images/ecap_reg.png">
+<center>图12</center></p>
+<p>然后如果系统支持x2apic则通过dmar table flag的Flags的bit 1来判断iommu硬件是否enable了x2apic(注如果这个bit被清0则表示enable了)，接着遍历所有的iommu硬件通过检测图12当中的cap regsiter的EIM field是否为0(为0则表示只支持xAPIC，为1则表示直接x2APIC)，如果有一个iommu硬件cap不支持EIM，则整个eim_mod也会设置为false。接下来才开始进入真正的核心逻辑</p>
+<div class="highlight"><pre><span></span><code><span class="w">       </span><span class="n">for_each_iommu</span><span class="p">(</span><span class="n">iommu</span><span class="p">,</span><span class="w"> </span><span class="n">drhd</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">intel_setup_irq_remapping</span><span class="p">(</span><span class="n">iommu</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;Failed to setup irq remapping for %s\n&quot;</span><span class="p">,</span>
+<span class="w">                               </span><span class="n">iommu</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">);</span>
+<span class="w">                        </span><span class="n">goto</span><span class="w"> </span><span class="nf">error</span><span class="p">;</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+
+<p>从上面可以看到它会为每个iommu硬件来创建irq_remapping相关的信息，具体还是要分析一下<code>intel_setup_irq_remapping</code>这个函数。首先为每个iommu分配ir_table结构，接着创建1M大小的中断remapping table，接着创建bitmap主要是用它来管理table当中有哪些irte可用，然后再创建ir_domain和ir_msi_domain这两类中断domain，linux当中的irq domain是一个树形结构具体关系如下</p>
+<div class="highlight"><pre><span></span><code>x86_vector_domain ---- 父亲
+      |
+      |
+   ir_domain   -------- 儿子
+      |
+      |
+   ir_msi_domain -------孙子
+</code></pre></div>
+
+<p>接下来通过<code>iommu_set_irq_remapping</code> 这个函数来设置irte table的基地址</p>
+<div class="highlight"><pre><span></span><code><span class="kd">addr</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">virt_to_phys</span><span class="p">((</span><span class="nx">void</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">ir_table</span><span class="o">-&gt;</span><span class="kd">base</span><span class="p">);</span>
+
+<span class="nx">raw_spin_lock_irqsave</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">register_lock</span><span class="p">,</span><span class="w"> </span><span class="nx">flags</span><span class="p">);</span>
+<span class="c1">//将ir table的基地址写到IRTA寄存器</span>
+<span class="nx">dmar_writeq</span><span class="p">(</span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">reg</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">DMAR_IRTA_REG</span><span class="p">,</span>
+<span class="w">                    </span><span class="p">(</span><span class="kd">addr</span><span class="p">)</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nx">IR_X2APIC_MODE</span><span class="p">(</span><span class="nx">mode</span><span class="p">)</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nx">INTR_REMAP_TABLE_REG_SIZE</span><span class="p">);</span>
+<span class="c1">//这一步的作用主是通知硬件去更新irte table的指针，避免有cache残留</span>
+<span class="cm">/* Set interrupt-remapping table pointer */</span>
+<span class="nx">writel</span><span class="p">(</span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">gcmd</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nx">DMA_GCMD_SIRTP</span><span class="p">,</span><span class="w"> </span><span class="nx">iommu</span><span class="o">-&gt;</span><span class="nx">reg</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">DMAR_GCMD_REG</span><span class="p">);</span>
+</code></pre></div>
+
+<p>上面基本上把整个初始化的流程讲完了，下面我们来看一下interrupt remapping是如何工作的。</p>
+<h3>总结</h3>
+<p>上面基本上把interrupt remapping的硬件层工作原理和软件层初始化的流程讲完了，在下在的章节当中会详细介绍一下interrupt remapping在虚拟化和非虚拟化这两种场景下的工作机制。</p>
+
+                <!-- 图片画廊 -->
+            </main>
+
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">iommu</span>
+                    <span class="tag-cloud-item">interrupt remapping</span>
+                </div>
+            </div>
+
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">二 15 二月 2022</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
+
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
+
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
+<footer>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+    </body>
+    <!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>

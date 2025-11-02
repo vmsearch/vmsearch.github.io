@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh_cn">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="duma" />
+
+        <meta name="description" content="序言 继去年发布graviton2之后，今年aws如期发布了graviton3。graviton3在aws数据中心的落地标志着其在自研芯片的道路上又成功的迈进了一大步，同时也标志着其在公有云上的护城河又一次得到了加宽。 aws graviton芯片生态打造 在分析graviton3之前，我们先来看一下aws …
+" />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:card" content="summary">
+
+<meta name="keywords" content="aws, aws graviton3, articles, " />
+        <title>深入解读aws graviton3  · KernelNote - AI基础设施技术博客
+</title>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+        <link rel="stylesheet" type="text/css" href="./theme/css/elegant.prod.css" media="screen">
+        <link rel="stylesheet" type="text/css" href="./theme/css/custom.css" media="screen">
+
+        <link href="https://kernelnote.com/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="KernelNote - AI基础设施技术博客 - Full Atom Feed" />
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LRRMJ08SPD"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LRRMJ08SPD');
+</script>
+
+
+
+    </head>
+    <body>
+        <div id="content">
+            <div class="navbar navbar-static-top">
+                <div class="navbar-inner">
+                    <div class="container-fluid">
+                        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </a>
+                        <a class="brand" href="./"><span class=site-name>KernelNote - AI基础设施技术博客</span></a>
+                        <div class="nav-collapse collapse">
+                            <ul class="nav pull-right top-menu">
+                                <li >
+                                    <a href=
+                                       .
+                                    >Home</a>
+                                </li>
+                                <li ><a href="./pages/about.html">about</a></li>
+                                <li ><a href="./categories.html">Categories</a></li>
+                                <li ><a href="./tags.html">Tags</a></li>
+                                <li ><a href="./archives.html">Archives</a></li>
+                                <li><form class="navbar-search" action="./search.html" onsubmit="return validateForm(this.elements['q'].value);"> <input type="text" class="search-query" placeholder="Search" name="q" id="tipue_search_input"></form></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="span1"></div>
+                    <div class="span10">
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
+
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
+                深入解读aws graviton3
+            </h1>
+
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2021-12-08T22:45:00+08:00">三 08 十二月 2021</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">aws</span>
+                    <span class="article-tag">aws graviton3</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <h3>序言</h3>
+<p>继去年发布graviton2之后，今年aws如期发布了graviton3。graviton3在aws数据中心的落地标志着其在自研芯片的道路上又成功的迈进了一大步，同时也标志着其在公有云上的护城河又一次得到了加宽。</p>
+<h3>aws graviton芯片生态打造</h3>
+<p>在分析graviton3之前，我们先来看一下aws 在打造graviton生态方面都取得了哪些成果
+-   基于graviton aws推出一系列实例，覆盖到存储，数据库，计算，大数据分析
+    -   计算密集型：c6g, c6gd, c6gn
+    -   内存密集型：r6g, r6gd, x2gd
+    -   存储密集型：lm4gn, ls4gn
+    -   GPU实例：g5g
+- 操作系统兼容
+    - cetos, redhat, debian, fedora, freebsd, ubuntu, netbsd, suse</p>
+<ul>
+<li>containers<ul>
+<li>aws fargate, aws EKS, docker, k8s</li>
+</ul>
+</li>
+<li>第三方合作伙伴<ul>
+<li>NVIDIA HPC sdk available in 2022</li>
+<li>SAPHANA</li>
+</ul>
+</li>
+</ul>
+<p>大胆预测，未来aws在自己的数据中心内，大部分的服务器以及硬件都可能是自研的。理由也比较简单，一个是可控，一个是成本优势比如aws推出的nitro ssd 直接跟flash memory厂商合作省去了中间商的差价。另外一个最重要的是，未来云厂商的护城河有多宽取决于云厂商自研硬件的能力。同时相对于传统服务器厂商，云厂商能够根据自己客户的业务痛点以及相关的性能瓶颈做有针对性的优化，而这个优势像intel, AMD这种厂商是完全没有的。</p>
+<h3>graviton3架构</h3>
+<ul>
+<li>cpu：ARM V1， 64core, 2.6GHZ    </li>
+<li>内存：8 channel DDR5，内存全加密设计, 内存带宽300GB/s</li>
+<li>晶体管：550亿</li>
+<li>I/O：2  *  PCIe  gen5</li>
+<li>设计工艺：chiplet, 7 silicon die, 5nm</li>
+</ul>
+<p><img alt="Pasted image 20211208094954" src="images/Pasted image 20211208094954.png"></p>
+<p><center>graviton3 interconnet&amp;system 图 </center></p>
+<p>如上图所示，64 core占用了一个die,  其余的分别是2个die for pcie gen5,  4个die for DDR5 mem controller。</p>
+<p>基于graviton3，aws发布了c7g服务器如下图所示：</p>
+<p><img alt="Pasted image 20211207214854" src="images/Pasted image 20211207214854.png">
+  <center> 图1</center></p>
+<p>c7g服务器架构如下:
+* no numa架构，无SMT，每个vcpu都是一个physical core
+* 3 sockets/server,  采用一个Nitro card 带3 个graviton 3 sockets, 将传统42U 机架利用率提高50%的同时，也顺便降低了功耗。
+* 8 channel DDR5</p>
+<p><img alt="Pasted image 20211208100455.png" src="images/Pasted image 20211208100455.png">
+    <center>一带三架构</center></p>
+<p>关于这个一带三架构这里我详细介绍一下，这里的每个sockets其实都一个单路的graviton3服务器。底层实现原理其实也比较简单，每台单路的服务器通过物理link直接跟nitro 卡链接，然后这个link主要是用来传输标准的pcie 协议，使得nitro card能为三台服务器模拟设备。</p>
+<p>其实这种设计并不是aws首创，国外的dpu创业公司fungible 很早就提出了这种设计，只是aws 成功的把这种设计在其数据中心进行了落地。</p>
+<h3>graviton3 背后的设计逻辑</h3>
+<p>1.<strong>gravition3 只提供64 cores，2.6GHZ</strong></p>
+<p>大多数人认为如果要提升 workload的performance，天然就会想到增加服务器cpu的数量以及提升cpu 运行频率。确实，大多数服务器厂商也都是这么做的。比如，不管是intel还是amd都在疯狂的堆core和提高频率，这一点可以从这两家下一代的服务器架构上看出一些端倪。intel的下一代SPR平台最大56C(112HT), 而AMD下一代平台Genoa达到了96C(192HT)，而两者的cpu 运行频率基本都是3.0GHZ以上。</p>
+<p>但是，随着Dennard scaling 定律的失效，当你提升频率的同时cpu功耗也在不断的提高。站在aws角度来看，这并不是他们想要的，他们希望在performance和功耗之间找到一种平衡。那么graviton3是怎么做的呢？答案就是他们把core 做的更wider，也就是说让每个cpu cycle内做更多的工作。</p>
+<p><img alt="Pasted image 20211208143933.png" src="images/Pasted image 20211208143933.png">
+<center>图2</center></p>
+<p>graviton3 cpu 增强部分如图2所示，具体优化如下：</p>
+<ul>
+<li>取指(Fetch), 译码(decode)，执行(issue, instruction window) 性能翻倍</li>
+</ul>
+<p>前两个大家都比较熟悉，这里主要解释一下issue instruction window, 这个窗口大小决定了一个cpu cycle内可以选取多少已经ready的指令来进行执行。窗口越大那么就可以选取越多的指认来执行(这些指令之间是无依赖的)。但是这个窗口大小是受限于cycle time的，也就是说不能无限放大。</p>
+<ul>
+<li>支持bfloat 16, 256b SVE(可扩展矢量指令Scalable Vector Extension,主要针对HPC，机器学习场景)</li>
+<li>两倍的mem ops的增强</li>
+<li>两倍的TLS性能</li>
+</ul>
+<p>2.<strong>graviton3 不支持numa</strong></p>
+<p>numa架构大家都很熟悉了，它主是为了解决SMP即对称多处理器架构下，随着cpu的增多而产生的内部访问瓶颈。做过性能优化的同学应该都了解，在像graviton这种ARM架构下跨numa访问内存导致的性能衰减在某些业务场景下可达到50%，而云上业务如果要做业务优化都必须要case by case的分析，尤其是像aws这种超大规模云厂商的场景下，这种优化策略基本上不可行。因此，graviton系列干脆从一开始就不支持numa架构。那么怎么解决这个内存访问的问题呢，aws一方面保持核的数量不会太多graviton系列都是64核，另一方面增加内存带宽比如gravion3直接上DDR5，当然上DDR5不仅仅是为了解决这个问题，后面会再聊到这个话题。所以，可以预见后面其他大云厂商也都会紧跟aws脚步陆续推出无numa的 ARM server。</p>
+<p>3.<strong>PCIe gen5 and DDR5 一次给你上齐</strong></p>
+<p>这一点上可能大家都没有想到，这些新的硬件会在AWS 这种云厂商在自研的ARM服务器上提前release出来。其他的硬件服务器厂商基本上都要到2022年才能提供，比如intel SPR以及AMD 的Genoa。其实仔细想想也可以理解，aws这种云厂商主要是有业务驱动的，而其他的硬件厂商都是面向技术驱动的。当然还有一点就是开篇所提到的，graviton3得益于chiplet的设计工艺，使得它能更加快速的推向市场。</p>
+<p>刚才提到了aws是面向业务的芯片设计，在设计graviton3的时候也确实考虑了真实的业务场景。比如现在的很多业务只要你给他更多的内存带宽和更低的内存访问延时他就能跑的很“开心”，因此这也是graviton3上ddr5原因之一。</p>
+<p>另外，graviton3未来面向的场景更多的是HPC和机器学习，这些更多的是以hpc集群或者机器学习集群呈现给用户。这些场景的特点一是东西向node之间interconnect带宽要求很高，另一方面就是这些业务都是吃内存的主。</p>
+<p><img alt="Pasted image 20211208164205" src="images/Pasted image 20211208164205.png"></p>
+<p>上图是一张aws的HPC超算集群图，从图中可以看到东西向连接带宽已经达到400Gbps，考虑到后面的扩展需求，上pcie gen5就顺理成章了。另外，除了pcie链路的压力，这种高带宽对memory 带宽也同样有压力。不管是RDMA还是DMA，最终都是要跟memory controller打交道，如果你的内存带宽达不到，你使用性能再高的pcie链路也是不行的。</p>
+<p>4.<strong>性能测试</strong></p>
+<p><img alt="Pasted image 20211208165219" src="images/Pasted image 20211208165219.png"></p>
+<p><img alt="Pasted image 20211208165305.png" src="images/Pasted image 20211208165305.png"></p>
+
+                <!-- 图片画廊 -->
+            </main>
+
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">aws</span>
+                    <span class="tag-cloud-item">aws graviton3</span>
+                </div>
+            </div>
+
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">三 08 十二月 2021</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
+
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
+
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
+                    </div>
+                    <div class="span1"></div>
+                </div>
+            </div>
+        </div>
+<footer>
+
+
+
+
+    <div id="fpowered">
+        Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
+        Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
+    </div>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
+        <script>
+            function validateForm(query)
+            {
+                return (query.length > 0);
+            }
+        </script>
+    </body>
+    <!-- Theme: Elegant built for Pelican
+        License : MIT -->
+</html>
