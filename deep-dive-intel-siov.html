@@ -12,16 +12,6 @@
         <meta name="twitter:card" content="summary">
 
 <meta name="keywords" content="SIOV, articles, " />
-
-<meta property="og:title" content="聊聊intel平台io 虚拟化技术之 siov "/>
-<meta property="og:url" content="./deep-dive-intel-siov.html" />
-<meta property="og:description" content="序言 首先需要说明的是这并不是一项很新的技术，因为早在2017年intel就对外expose了相关的spec。但是直到今天仍然还是停留在spec层面，不过好在随着intel SPR平台的推出intel也终于下定决心要enable这个feature了(其主 …" />
-<meta property="og:site_name" content="KernelNote - AI基础设施技术博客" />
-<meta property="og:article:author" content="duma" />
-<meta property="og:article:published_time" content="2022-03-26T00:00:00+08:00" />
-<meta name="twitter:title" content="聊聊intel平台io 虚拟化技术之 siov ">
-<meta name="twitter:description" content="序言 首先需要说明的是这并不是一项很新的技术，因为早在2017年intel就对外expose了相关的spec。但是直到今天仍然还是停留在spec层面，不过好在随着intel SPR平台的推出intel也终于下定决心要enable这个feature了(其主 …">
-
         <title>聊聊intel平台io 虚拟化技术之 siov  · KernelNote - AI基础设施技术博客
 </title>
         <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
@@ -74,53 +64,78 @@
                 <div class="row-fluid">
                     <div class="span1"></div>
                     <div class="span10">
-<article itemscope>
-<div class="row-fluid">
-    <header class="page-header span10 offset2">
-        <h1>
-            <a href="./deep-dive-intel-siov.html">
-                聊聊intel平台io 虚拟化技术之 siov
-            </a>
-        </h1>
-    </header>
-</div>
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
 
-<div class="row-fluid">
-        <div class="span8 offset2 article-content">
-            
-            <h4>序言</h4>
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
+                聊聊intel平台io 虚拟化技术之 siov
+            </h1>
+
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2022-03-26T00:00:00+08:00">六 26 三月 2022</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">SIOV</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <h4>序言</h4>
 <p>首先需要说明的是这并不是一项很新的技术，因为早在2017年intel就对外expose了相关的spec。但是直到今天仍然还是停留在spec层面，不过好在随着intel SPR平台的推出intel也终于下定决心要enable这个feature了(其主要原因是SPR平台的许多feature比如DSA都是需要通过SIOV来enable)。那么今天我们就来解析一下这项技术，照例我们还是先来看一下其整体的架构说明。</p>
 <h4>硬件架构</h4>
 <p>在解析siov架构之前，我们先来看一下这些年来 I/O Virtualization的演进路线</p>
-<p><img alt="io_virtualization" src="images/io_virtualization.png"></p>
+<p><img alt="io_virtualization" src="images/io_virtualization.png">
 <center>图1 the evolution of I/O Virtualization</center>
-<p>其中大家对SR-IOV比较熟悉它也是目前在高性能的I/O虚拟化场景使用最多的技术，为了让大家对SIOV这个技术有个更加全面的认知，我们把SR-IOV和SIOV做一下对比。</p>
-<p><img alt="sriov&amp;siov" src="images/sriov&amp;siov.png"></p>
+其中大家对SR-IOV比较熟悉它也是目前在高性能的I/O虚拟化场景使用最多的技术，为了让大家对SIOV这个技术有个更加全面的认知，我们把SR-IOV和SIOV做一下对比。</p>
+<p><img alt="sriov&amp;siov" src="images/sriov&amp;siov.png">
 <center>图2 SR-IOV VS SIOV</center>
-<p>如图2所示，SR-IOV技术主要是以设备为粒度进行切分即一个PF分割成多个VF，每个VF都是一个独立的完善的pcie设备。一个PF能支持的VF的最大数量在硬件设备出厂的时候就已经确定了，而SIOV对上层应用(比如虚拟机)呈现出来的设备是由软件通过对硬件层的更小粒度的资源(Queue)动态组合形成的，所以相对SR-IOV，SIOV有更强的可扩展性。另外，在灵活性方面siov既能让系统上的应用通过system call的形式直接访问其底层的queue资源，也能通过virtual device interfaces的形式直通给vm。还有就是在siov的场景下，两个VDEV之间的Queue资源是可以share的；另外一个就是良好的兼容性，vmm可以使用virtual devevice composition 在不同代的硬件设备上呈现相同的VDEV功能，这样即使在部署了不同代的siov设备的host之间虚拟机也能正常迁移。</p>
-<p><img alt="benefits" src="images/benefits.png"></p>
-<center> 图3 the benefits of SIOV </center>
-
+如图2所示，SR-IOV技术主要是以设备为粒度进行切分即一个PF分割成多个VF，每个VF都是一个独立的完善的pcie设备。一个PF能支持的VF的最大数量在硬件设备出厂的时候就已经确定了，而SIOV对上层应用(比如虚拟机)呈现出来的设备是由软件通过对硬件层的更小粒度的资源(Queue)动态组合形成的，所以相对SR-IOV，SIOV有更强的可扩展性。另外，在灵活性方面siov既能让系统上的应用通过system call的形式直接访问其底层的queue资源，也能通过virtual device interfaces的形式直通给vm。还有就是在siov的场景下，两个VDEV之间的Queue资源是可以share的；另外一个就是良好的兼容性，vmm可以使用virtual devevice composition 在不同代的硬件设备上呈现相同的VDEV功能，这样即使在部署了不同代的siov设备的host之间虚拟机也能正常迁移。</p>
+<p><img alt="benefits" src="images/benefits.png">
+<center> 图3 the benefits of SIOV </center></p>
 <p>接下来我们回归到SIOV架构上来，按照惯例我们还是先来看一下硬件底层的架构。为了让大家更好的理解相关架构，这里还是以SR-IOV做为对比</p>
-<p><img alt="hw_siov" src="images/hw_siov.png"></p>
-<center> 图 4 the hardware of SIOV </center>
-
+<p><img alt="hw_siov" src="images/hw_siov.png">
+<center> 图 4 the hardware of SIOV </center></p>
 <p>具体如图4所示，intel scalable IOV 主要是以queue为粒度来给上层应用提供服务，为此siov在硬件侧引入了一个ADI(Assignable Device Interfaces)的概念。在功能上它与VF相似，但是不同点在于所有的ADI共享同一个PF的BDF号、pci config_space和BAR空间。但是这个也引入了额外的问题：一是所有的ADI share同一个BDF号那在iommu这一侧如何区分来自不同的ADI的设备的DMA请求呢？另外一个就是一个pcie设备即使在msix的情况下他支持的最大中断数目也只能到2048，那如果一个PF上支持的ADI数量所使用的总的中断数量超过了这个limit将如何处理呢？</p>
 <p>先说问题一，siov为了解决这个问题给每个ADI的tlp request额外加上了一个全局唯一的Process Address Space Identifier简称PASID的标识，但是如果多个ADI 直通给同一个vm则这些ADI的PASID是相同的。在iommu侧这种支持有PASID的io页表翻译模式称为scalable Mode Address Translation，没有PASID的称为legacy Mode。如果iommu 的Extend Capability Register的SMTS( Scalable Mode Translation)位置1则表明支持scalable mode，在scalabe mode模式下Root Table Address Register(RTADDR_REG)的TTM为01b。</p>
-<p><img alt="siov_trans" src="images/siov_trans.png"></p>
-<center> 图5</center>
-
+<p><img alt="siov_trans" src="images/siov_trans.png">
+<center> 图5</center></p>
 <p>如上图所示scalable Mode 的root table会关联两个contex table，一个Upper context table 对应着 device 号在16~31之间的PCI function，另外一个Lower Contex Table 对应device 号在0~15这个范围内的PCI function。每个context entry 都包含着一个指向PASID directory的指针，然后通过PASID 高14位(bits 19:6 )在scalable Mode PASID  directory当中索引到scalabe Mode PASI Table，再通过PASID的低6位(5:0)索引到table当中具体的entry项。通过scalable Mode PASID table entry的PGTT(8:6)标志来确定Translation type。</p>
-<p><img alt="pgtt" src="images/pgtt.png"></p>
-<center> 图6</center>
-
+<p><img alt="pgtt" src="images/pgtt.png">
+<center> 图6</center></p>
 <p>再说问题二，为了解决这个中断limit的问题SIOV引入了新的中断存储机制叫IMS(interrupt message storage)，理论上IMS在支持的中断数量是没有上限的，从实现原理上来讲其仍然是message 格式的中断触发机制，每个message有一个DWORD 大小的payload和64-bit的address。这些message存储在 IMS的table里面，这个table可以有全部缓存在硬件上，也可以全部放在host memory里面。ADI是不能直接操作(比如修改)IMS的，它只能通过PF的 'Interrupt Message Generation Logic' 来触发中断。</p>
 <p>上面说了两个问题的解决，下面我们说一下ADI的mmio，它是位于PF bar地址空间的一段连续的按页大小对齐的地址范围。每个ADI设备的mmio是相互独立的，ADI设备的mmio register又分为两类，一类是访问频率比较高的比如硬件层的doorbell，一类是不经常访问的或者慢路径访问的比如用来进行一些设备配置和管理等。另外，为了支持大量ADI设备的mmio，PF必须要实现prefetchable 64-bit BAR。原因是说PCIe non-prefetchable BARS的memory  space  能支持的最大空间只有1GB，显然不能支持太多的ADI设备；而prefetchable 属性enable 的BARS 的memory space 可以超过4G。</p>
 <p>说完mmio我们再聊一下如何确定PF是否支持SIOV。PF是通过PCI Express Designated Vendor
 Specific Extended Capability (DVSEC)这个cap来向PF driver report 是否来支持SIOV，具体DVSEC 格式如下</p>
-<p><img alt="dvsec" src="images/dvsec.png"></p>
-<center> 图7</center>
-
+<p><img alt="dvsec" src="images/dvsec.png">
+<center> 图7</center></p>
 <p>在pci驱动侧，相关检测代码如下：</p>
 <div class="highlight"><pre><span></span><code><span class="o">/**</span>
 <span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">pci_find_dvsec</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">position</span><span class="w"> </span><span class="n">of</span><span class="w"> </span><span class="n">DVSEC</span><span class="w"> </span><span class="n">with</span><span class="w"> </span><span class="n">provided</span><span class="w"> </span><span class="n">vendor</span><span class="w"> </span><span class="nb">and</span><span class="w"> </span><span class="n">dvsec</span><span class="w"> </span><span class="n">id</span>
@@ -159,12 +174,11 @@ Specific Extended Capability (DVSEC)这个cap来向PF driver report 是否来支
 
 <h5>软件架构</h5>
 <p>上面说完了整个硬件的架构，下面我们来看一下在软件层面的实现</p>
-<p><img alt="intel_siov_soft" src="images/intel_siov_soft.png"></p>
+<p><img alt="intel_siov_soft" src="images/intel_siov_soft.png">
 <center> 图8</center>
-<p>如图8所示，整个软件架构上除了guest driver，host driver之外还引入了新的组件VDCM和VDEV。上面的图可能跟大家的认知还是有些距离，为了让大家有个更加清晰的认知我们可以看下面这张图</p>
-<p><img alt="siov_soft_architecture" src="images/siov_soft_architecture.png"></p>
-<center>图9</center>
-
+如图8所示，整个软件架构上除了guest driver，host driver之外还引入了新的组件VDCM和VDEV。上面的图可能跟大家的认知还是有些距离，为了让大家有个更加清晰的认知我们可以看下面这张图</p>
+<p><img alt="siov_soft_architecture" src="images/siov_soft_architecture.png">
+<center>图9</center></p>
 <p>接着我们来分析新引入的两个组件(mdev这个框架我们在这里就不详细介绍了)</p>
 <ul>
 <li>
@@ -178,8 +192,8 @@ VDCM 全称是Virtual Device Composition Module，它主要负责将一个或者
 </ul>
 <p>从上面的分析来看，VDCM在整个软件架构上扮演着非常重要的角色，下面我们结合一张图来看一下相关实现</p>
 <p><img alt="vdcm" src="images/vdcm.png"></p>
-<center> 图10</center>
-<p>结合图10我们来分析一些细节的东西，比如vdev 的mmio，中断等</p>
+<p><center> 图10</center>
+结合图10我们来分析一些细节的东西，比如vdev 的mmio，中断等</p>
 <ul>
 <li>
 <p>VDEV mmio
@@ -198,46 +212,165 @@ VDEV 会通过VDCM 虚拟出MSI或者MSIX的能力呈献给guest，当guest driv
 <li>Bring a Scalable IOV Capable Device into Linux World by Xin Zeng &amp; Yi Liu</li>
 </ul>
 
+                <!-- 图片画廊 -->
+            </main>
 
-             
- 
-            
-            
-            
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">SIOV</span>
+                </div>
+            </div>
 
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
 
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
 
-
-
-
-            <hr/>
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">六 26 三月 2022</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
         </div>
-        <section id="article-sidebar" class="span2">
-            <h4>Published</h4>
-            <time itemprop="dateCreated" datetime="2022-03-26T00:00:00+08:00"> 3 26, 2022</time>
-            <h4>Category</h4>
-            <a class="category-link" href="./categories.html#articles-ref">articles</a>
-            <h4>Tags</h4>
-            <ul class="list-of-tags tags-in-article">
-                <li><a href="./tags.html#siov-ref">SIOV
-                    <span>1</span>
-</a></li>
-            </ul>
-            
 
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
 
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
 
-
-
-            
-
-
-
-
-
-        </section>
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
 </div>
-</article>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
                     </div>
                     <div class="span1"></div>
                 </div>
@@ -252,7 +385,7 @@ VDEV 会通过VDCM 虚拟出MSI或者MSIX的能力呈献给guest，当guest driv
         Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
         Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
     </div>
-</footer>            <script src="//code.jquery.com/jquery.min.js"></script>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
         <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
         <script>
             function validateForm(query)
@@ -260,31 +393,6 @@ VDEV 会通过VDCM 虚拟出MSI或者MSIX的能力呈献给guest，当guest driv
                 return (query.length > 0);
             }
         </script>
-
-    <script>
-    (function () {
-        if (window.location.hash.match(/^#comment-\d+$/)) {
-            $('#comment_thread').collapse('show');
-        }
-    })();
-    window.onhashchange=function(){
-        if (window.location.hash.match(/^#comment-\d+$/))
-            window.location.reload(true);
-    }
-    $('#comment_thread').on('shown', function () {
-        var link = document.getElementById('comment-accordion-toggle');
-        var old_innerHTML = link.innerHTML;
-        $(link).fadeOut(200, function() {
-            $(this).text('Click here to hide comments').fadeIn(200);
-        });
-        $('#comment_thread').on('hidden', function () {
-            $(link).fadeOut(200, function() {
-                $(this).text(old_innerHTML).fadeIn(200);
-            });
-        })
-    })
-</script>
-
     </body>
     <!-- Theme: Elegant built for Pelican
         License : MIT -->

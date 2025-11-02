@@ -12,16 +12,6 @@
         <meta name="twitter:card" content="summary">
 
 <meta name="keywords" content="pci, pcie, articles, " />
-
-<meta property="og:title" content="一文带你了解PCIe相关知识点 "/>
-<meta property="og:url" content="./something-about-pcie.html" />
-<meta property="og:description" content="GT/s 和 GBps 分别表示什么 GT/s 是 Giga Transmission per second的缩写，它表示的是原始速率即每秒能够传输多少bits，其数值等于PCIe总线的时钟频率。而GBps表示有效带宽也即每秒能够传输多少数据，它跟原始速率 …" />
-<meta property="og:site_name" content="KernelNote - AI基础设施技术博客" />
-<meta property="og:article:author" content="duma" />
-<meta property="og:article:published_time" content="2021-12-12T15:24:00+08:00" />
-<meta name="twitter:title" content="一文带你了解PCIe相关知识点 ">
-<meta name="twitter:description" content="GT/s 和 GBps 分别表示什么 GT/s 是 Giga Transmission per second的缩写，它表示的是原始速率即每秒能够传输多少bits，其数值等于PCIe总线的时钟频率。而GBps表示有效带宽也即每秒能够传输多少数据，它跟原始速率 …">
-
         <title>一文带你了解PCIe相关知识点  · KernelNote - AI基础设施技术博客
 </title>
         <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
@@ -74,21 +64,52 @@
                 <div class="row-fluid">
                     <div class="span1"></div>
                     <div class="span10">
-<article itemscope>
-<div class="row-fluid">
-    <header class="page-header span10 offset2">
-        <h1>
-            <a href="./something-about-pcie.html">
-                一文带你了解PCIe相关知识点
-            </a>
-        </h1>
-    </header>
-</div>
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
 
-<div class="row-fluid">
-        <div class="span8 offset2 article-content">
-            
-            <p><img alt="pcie-para" src="images/Pasted image 20211210163313.png"></p>
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
+                一文带你了解PCIe相关知识点
+            </h1>
+
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2021-12-12T15:24:00+08:00">日 12 十二月 2021</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">pci</span>
+                    <span class="article-tag">pcie</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <p><img alt="pcie-para" src="images/Pasted image 20211210163313.png"></p>
 <ul>
 <li>GT/s 和 GBps 分别表示什么</li>
 </ul>
@@ -120,49 +141,166 @@
 <p>在上一篇文章<a href="https://mp.weixin.qq.com/s/U9qbCJOZdUUw2xc4S3mk0A">深入解析aws graviton3</a>基本上也提到了，那就是AI/ML。以自动驾驶为例子，一辆汽车平均每天产生的数据包括图像，各种传感器等大约在4TB左右，而这些数据的计算和处理都需要在不同的计算节点之间进行传输。</p>
 <p>另外一方面， AI/ML的训练模型的规模基本上在3到4个月就会double一下。而这些海量数据和训练模型的快速增长给数据中心的计算架构也带来巨大压力，比如内存访问，计算节点之间的连接的带宽等。这也就很好的说明了为什么aws graviton3里面为什么直接上pcie5了，以pcie 5 x 16为例，最高能支持128GBps的链路带宽，足以满足AI/ML的需求。</p>
 
+                <!-- 图片画廊 -->
+            </main>
 
-             
- 
-            
-            
-            
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">pci</span>
+                    <span class="tag-cloud-item">pcie</span>
+                </div>
+            </div>
 
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
 
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
 
-
-
-
-            <hr/>
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">日 12 十二月 2021</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
         </div>
-        <section id="article-sidebar" class="span2">
-            <h4>Published</h4>
-            <time itemprop="dateCreated" datetime="2021-12-12T15:24:00+08:00">12 12, 2021</time>
-            <h4>Category</h4>
-            <a class="category-link" href="./categories.html#articles-ref">articles</a>
-            <h4>Tags</h4>
-            <ul class="list-of-tags tags-in-article">
-                <li><a href="./tags.html#pci-ref">pci
-                    <span>1</span>
-</a></li>
-                <li><a href="./tags.html#pcie-ref">pcie
-                    <span>3</span>
-</a></li>
-            </ul>
-            
 
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
 
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
 
-
-
-            
-
-
-
-
-
-        </section>
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
 </div>
-</article>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
                     </div>
                     <div class="span1"></div>
                 </div>
@@ -177,7 +315,7 @@
         Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
         Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
     </div>
-</footer>            <script src="//code.jquery.com/jquery.min.js"></script>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
         <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
         <script>
             function validateForm(query)
@@ -185,31 +323,6 @@
                 return (query.length > 0);
             }
         </script>
-
-    <script>
-    (function () {
-        if (window.location.hash.match(/^#comment-\d+$/)) {
-            $('#comment_thread').collapse('show');
-        }
-    })();
-    window.onhashchange=function(){
-        if (window.location.hash.match(/^#comment-\d+$/))
-            window.location.reload(true);
-    }
-    $('#comment_thread').on('shown', function () {
-        var link = document.getElementById('comment-accordion-toggle');
-        var old_innerHTML = link.innerHTML;
-        $(link).fadeOut(200, function() {
-            $(this).text('Click here to hide comments').fadeIn(200);
-        });
-        $('#comment_thread').on('hidden', function () {
-            $(link).fadeOut(200, function() {
-                $(this).text(old_innerHTML).fadeIn(200);
-            });
-        })
-    })
-</script>
-
     </body>
     <!-- Theme: Elegant built for Pelican
         License : MIT -->

@@ -12,16 +12,6 @@
         <meta name="twitter:card" content="summary">
 
 <meta name="keywords" content="iommu, articles, " />
-
-<meta property="og:title" content="深入了解iommu系列一：iommu硬件架构和驱动初始化 "/>
-<meta property="og:url" content="./deep-dive-iommu-hardware-driver.html" />
-<meta property="og:description" content="硬件架构 为了让大家对iommu有个直观的认识，我们先从硬件架构上看一下iommu是个什么东东。 图1 如上图所示，iommu就是上图所展示的DMA Remapping Unit，通常一台硬件服务器上会有多个DMA Remapping …" />
-<meta property="og:site_name" content="KernelNote - AI基础设施技术博客" />
-<meta property="og:article:author" content="duma" />
-<meta property="og:article:published_time" content="2022-01-18T20:14:00+08:00" />
-<meta name="twitter:title" content="深入了解iommu系列一：iommu硬件架构和驱动初始化 ">
-<meta name="twitter:description" content="硬件架构 为了让大家对iommu有个直观的认识，我们先从硬件架构上看一下iommu是个什么东东。 图1 如上图所示，iommu就是上图所展示的DMA Remapping Unit，通常一台硬件服务器上会有多个DMA Remapping …">
-
         <title>深入了解iommu系列一：iommu硬件架构和驱动初始化  · KernelNote - AI基础设施技术博客
 </title>
         <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
@@ -74,46 +64,71 @@
                 <div class="row-fluid">
                     <div class="span1"></div>
                     <div class="span10">
-<article itemscope>
-<div class="row-fluid">
-    <header class="page-header span10 offset2">
-        <h1>
-            <a href="./deep-dive-iommu-hardware-driver.html">
+<!-- 文章头部区域 -->
+<header class="article-header">
+    <div class="article-header-container">
+        <!-- 作者信息区域 -->
+        <div class="article-author-section">
+            <img src="./images/wechat.jpeg" alt="周毅博" class="author-avatar">
+            <div class="author-info">
+                <h3 class="author-name">周宜波</h3>
+                <p class="author-title">AI基础设施架构师 | AI Agent专家</p>
+            </div>
+        </div>
+
+        <!-- 文章标题和元信息 -->
+        <div class="article-meta-section">
+            <h1 class="article-title">
                 深入了解iommu系列一：iommu硬件架构和驱动初始化
-            </a>
-        </h1>
-    </header>
-</div>
+            </h1>
 
-<div class="row-fluid">
-        <div class="span8 offset2 article-content">
-            
-            <h4>硬件架构</h4>
+            <div class="article-meta-info">
+                <div class="meta-item">
+                    <span class="meta-icon">📅</span>
+                    <time datetime="2022-01-18T20:14:00+08:00">二 18 一月 2022</time>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📁</span>
+                    <span class="category-tag">articles</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">🏷️</span>
+                    <span class="article-tag">iommu</span>
+                </div>
+            </div>
+
+            <!-- 多媒体链接区域 -->
+        </div>
+    </div>
+</header>
+
+<!-- 文章主体内容 -->
+<div class="article-container">
+    <div class="article-main">
+        <!-- 文章内容 -->
+            <main class="article-content article-content-no-toc">
+                
+                <h4>硬件架构</h4>
 <p>为了让大家对iommu有个直观的认识，我们先从硬件架构上看一下iommu是个什么东东。</p>
-<p><img alt="iommu" src="images/iommu.png"></p>
-<center>图1 </center>
-
+<p><img alt="iommu" src="images/iommu.png">
+<center>图1 </center></p>
 <p>如上图所示，iommu就是上图所展示的DMA Remapping Unit，通常一台硬件服务器上会有多个DMA Remapping Unit，它下面可以对接pcie设备，也可以对接ioapic, HPET设备。在后面的行文当中统一简称为DMAR，通常DMA Remapping Unit集成在Root Complex当中，系统当中所有的外设的DMA操作理论上都要经过DMAR(例外就是在p2p通信的场景下且pcie switch 开了ATS功能那就不用再到DMAR转一圈了)。下图展示了一个pci设备在有iommu的场景下其进行一次read dma操作的相关流程。</p>
-<p><img alt="mem_read" src="images/mem_read.png"></p>
-<center>图2 </center>
-
+<p><img alt="mem_read" src="images/mem_read.png">
+<center>图2 </center></p>
 <p>在虚拟化出现之前， iommu硬件主要功能就是将iova转换成hpa，它的出现主要解决了两个问题。一个是<strong>让只有32位DMA能力的设备能够访问大于4G以上的内存地址空间</strong>，这个带来的收益是什么呢？举个例子，假如你的系统有6G的内存，你挂了一个32位DMA能力的外设，如果你在驱动里面分配了一个在4G以上的buffer，这个时候由于硬件不能直接dma这个buffer，因此你需要在低于4G的空间分配一个tmp buffer让硬件先把数据dma到这个tmp buffer上，然后你再从这个tmp buffer把数据copy到你的dst buffer上。你看这样一来二去效率就变的极为低下，而且对开发者来说也非常的不友好。如果有了iommu这个事情就比较好解决，直接把iova映射这个dst buffer上就解决了。</p>
 <p>引入iommu的另外一个收益就是可以把<strong>多个分散的dma操作聚合成一个连续的DMA操作</strong>。举个例子，驱动程序可能分配两个大小为4KB的且在物理内存地址上不连续的buffer，那么通过dma_map_sgtable这样的api可以直接把它们合并成一个8KB的在iova上是连续的DMA操作，这样一来原来需要两次DMA操作现在只需要一次操作就搞定了。</p>
 <p>随着虚拟化技术在数据中心大规模的使用，iommu的主要作用也由原来单方面的转换功能变成了转换加隔离。在sriov场景iommu的隔离作用主要体现在避免直通给虚拟机A的外设DMA到虚拟机B的内存，之所以能做到这一点还要利益于pcie协议在tlp上的增强，在pcie场景下每个外设发出的dma请求都打上了与这个设备相关联的具有唯一性的flag也即设备的bdf号，而通过这个bdf号可以索引到这个设备的iova转换表。这一点是早期pci协议是无法实现的，因为早期pci设备是通过仲裁机制来实现对pci总线的独占的，也就是说同一时间只有一个pci设备能使用pci总线，因此在这种情况pci设备的dma请求当中是没有bdf号的。</p>
 <h4>iommu硬件使能</h4>
 <p>在服务器启动过程中，bios通过DMAR ACPI 表来检测iommu硬件，这张表的具体结构如下图所示：</p>
-<p><img alt="dmar_acpi_table" src="images/dmar_acpi_table.png"></p>
-<center>图3 </center>
-
-<p><img alt="dmar_acpi_table2" src="images/dmar_acpi_table2.png"></p>
-<center>图4 </center>
-
+<p><img alt="dmar_acpi_table" src="images/dmar_acpi_table.png">
+<center>图3 </center></p>
+<p><img alt="dmar_acpi_table2" src="images/dmar_acpi_table2.png">
+<center>图4 </center></p>
 <p>而在remapping structures这个list里面目前支持5种类型信息：</p>
 <p><img alt="rmap_structure" src="images/rmap_structure.png"></p>
 <p>而 drhd这个就是用来描述真实的iommu硬件的结构，下面看一下drhd format</p>
-<p><img alt="drhd" src="images/drhd.png"></p>
-<center>图5 </center>
-
+<p><img alt="drhd" src="images/drhd.png">
+<center>图5 </center></p>
 <p>结合上面的图我们重点介绍几个Field，一个是segment number你可以理解为与某个dma remapping unit关联的pci domain；一个是device scope也就是文章开头所描述的每个dmar unit下可以关联不同的设备；一个是INCLUDE_PCI_ALL这个标志位，当这个bit被设置上时驱动会扫描pcie bus下面的所有设备并把这些设备跟这个dmar unit 关联起来，如果这个bit没有设置上则驱动需要解析device scope 然后把这个scope下面的设备跟这个dmar unit关联起来。最后一个就是register base address它定义一系列的register。下面我们看一下驱动里面与之相对应的结构体的定义：</p>
 <div class="highlight"><pre><span></span><code><span class="nx">struct</span><span class="w"> </span><span class="nx">dmar_drhd_unit</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nx">struct</span><span class="w"> </span><span class="nx">list_head</span><span class="w"> </span><span class="nx">list</span><span class="p">;</span><span class="w">          </span><span class="cm">/* list of drhd units   */</span>
@@ -154,9 +169,8 @@
 </code></pre></div>
 
 <p>其中的dmar_domain和root_entry将在iova到hpa的转换当中起到非常重要的作用，这里大家可以通过下面的一张图先有个整体的认知</p>
-<p><img alt="iotlb" src="images/iotlb.png"></p>
-<center>图6 </center>
-
+<p><img alt="iotlb" src="images/iotlb.png">
+<center>图6 </center></p>
 <p>上图展示的是如何使用bdf号找到相应的iova转换表以及进行地址转换的流程，相关的细节我们将在下面的行文当中详细介绍。首先，我们来看一下iommu从发现到初始化的整个流程是怎么样的。intel iommu的发现是从IOMMU_INIT_POST(detect_intel_iommu)这个地方开始的，我们先来先看一上detect_intel_iommu这个函数具体做了哪些事情。</p>
 <div class="highlight"><pre><span></span><code><span class="nc">int</span><span class="w"> </span><span class="n">__init</span><span class="w"> </span><span class="n">detect_intel_iommu</span><span class="p">(</span><span class="n">void</span><span class="p">)</span>
 <span class="err">{</span>
@@ -318,46 +332,165 @@
 <li>iommu 中断remapping在虚拟化和非虚拟化场景是如何工作的。</li>
 </ul>
 
+                <!-- 图片画廊 -->
+            </main>
 
-             
- 
-            
-            
-            
+        <!-- 文章底部区域 -->
+        <footer class="article-footer">
+            <!-- 标签区域 -->
+            <div class="article-tags-section">
+                <h4>🏷️ 相关标签</h4>
+                <div class="tags-cloud">
+                    <span class="tag-cloud-item">iommu</span>
+                </div>
+            </div>
 
+            <!-- 分享和互动 -->
+            <div class="article-interaction">
+                <div class="social-share">
+                    <h4>🔗 分享这篇文章</h4>
+                    <div class="share-buttons">
+                        <a href="#" class="share-btn twitter" target="_blank">𝕏 Twitter</a>
+                        <a href="#" class="share-btn weibo" target="_blank">📝 微博</a>
+                        <a href="#" class="share-btn linkedin" target="_blank">💼 LinkedIn</a>
+                    </div>
+                </div>
+            </div>
 
+            <!-- 作者签名档 -->
+            <div class="author-signature">
+                <div class="signature-content">
+                    <h4>关于作者</h4>
+                    <p><strong>周宜波</strong>，字节跳动火山引擎AI基础设施架构师，专注AI Agent、GPU池化、LLM推理优化等前沿技术。</p>
+                    <div class="author-social">
+                        <a href="https://twitter.com/zhyblife99" target="_blank">𝕏 Twitter</a>
+                        <span class="wechat-hint">💬 关注微信公众号获取更多内容</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
 
-
-
-
-            <hr/>
+    <!-- 侧边栏 -->
+    <aside class="article-sidebar">
+        <!-- 文章信息卡片 -->
+        <div class="sidebar-card article-info-card">
+            <h3>📊 文章信息</h3>
+            <div class="info-list">
+                <div class="info-item">
+                    <span class="info-label">发布时间</span>
+                    <span class="info-value">二 18 一月 2022</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">分类</span>
+                    <span class="info-value">articles</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">预计阅读</span>
+                    <span class="info-value">~10 分钟</span>
+                </div>
+            </div>
         </div>
-        <section id="article-sidebar" class="span2">
-            <h4>Published</h4>
-            <time itemprop="dateCreated" datetime="2022-01-18T20:14:00+08:00"> 1 18, 2022</time>
-            <h4>Category</h4>
-            <a class="category-link" href="./categories.html#articles-ref">articles</a>
-            <h4>Tags</h4>
-            <ul class="list-of-tags tags-in-article">
-                <li><a href="./tags.html#iommu-ref">iommu
-                    <span>5</span>
-</a></li>
-            </ul>
-            
 
+        <!-- 相关文章推荐 -->
+        <div class="sidebar-card related-articles-card">
+            <h3>📚 相关文章</h3>
+            <div class="related-list">
+            </div>
+        </div>
 
+        <!-- 技术栈展示 -->
+        <div class="sidebar-card skills-card">
+            <h3>🚀 技术栈</h3>
+            <div class="skills-list">
+                <span class="skill-item">AI Agent</span>
+                <span class="skill-item">GPU池化</span>
+                <span class="skill-item">LLM推理优化</span>
+                <span class="skill-item">高性能虚拟化</span>
+            </div>
+        </div>
 
-
-
-            
-
-
-
-
-
-        </section>
+        <!-- 关注公众号 -->
+        <div class="sidebar-card wechat-card">
+            <h3>🔔 订阅更新</h3>
+            <div class="wechat-content">
+                <p>扫码关注微信公众号</p>
+                <img src="./images/qrcode.jpg" alt="微信公众号二维码" class="sidebar-qrcode">
+                <p class="wechat-name">KernelNote</p>
+            </div>
+        </div>
+    </aside>
 </div>
-</article>
+
+<!-- 返回顶部按钮 -->
+<button class="back-to-top" id="backToTop">
+    <span>↑</span>
+</button>
+
+<script>
+// 返回顶部功能
+document.addEventListener('DOMContentLoaded', function() {
+    const backToTop = document.getElementById('backToTop');
+
+    // 监听滚动事件
+    window.addEventListener('scroll', function() {
+        if (window.pageYOffset > 300) {
+            backToTop.style.display = 'block';
+        } else {
+            backToTop.style.display = 'none';
+        }
+    });
+
+    // 点击返回顶部
+    backToTop.addEventListener('click', function() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
+
+    // 目录高亮
+    const tocLinks = document.querySelectorAll('.toc-nav a');
+    const headings = document.querySelectorAll('.article-content h2, .article-content h3, .article-content h4');
+
+    function updateTocHighlight() {
+        let current = '';
+        headings.forEach((heading, index) => {
+            const rect = heading.getBoundingClientRect();
+            if (rect.top <= 100) {
+                current = heading.id;
+            }
+        });
+
+        tocLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    if (tocLinks.length > 0) {
+        window.addEventListener('scroll', updateTocHighlight);
+        updateTocHighlight();
+    }
+
+    // 平滑滚动到目录项
+    tocLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+});
+</script>
                     </div>
                     <div class="span1"></div>
                 </div>
@@ -372,7 +505,7 @@
         Powered by: <a href="http://getpelican.com/" title="Pelican Home Page" target="_blank" rel="nofollow noopener noreferrer">Pelican</a>
         Theme: <a href="https://elegant.oncrashreboot.com/" title="Theme Elegant Home Page" target="_blank" rel="nofollow noopener noreferrer">Elegant</a>
     </div>
-</footer>            <script src="//code.jquery.com/jquery.min.js"></script>
+</footer>        <script src="//code.jquery.com/jquery.min.js"></script>
         <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/js/bootstrap.min.js"></script>
         <script>
             function validateForm(query)
@@ -380,31 +513,6 @@
                 return (query.length > 0);
             }
         </script>
-
-    <script>
-    (function () {
-        if (window.location.hash.match(/^#comment-\d+$/)) {
-            $('#comment_thread').collapse('show');
-        }
-    })();
-    window.onhashchange=function(){
-        if (window.location.hash.match(/^#comment-\d+$/))
-            window.location.reload(true);
-    }
-    $('#comment_thread').on('shown', function () {
-        var link = document.getElementById('comment-accordion-toggle');
-        var old_innerHTML = link.innerHTML;
-        $(link).fadeOut(200, function() {
-            $(this).text('Click here to hide comments').fadeIn(200);
-        });
-        $('#comment_thread').on('hidden', function () {
-            $(link).fadeOut(200, function() {
-                $(this).text(old_innerHTML).fadeIn(200);
-            });
-        })
-    })
-</script>
-
     </body>
     <!-- Theme: Elegant built for Pelican
         License : MIT -->
