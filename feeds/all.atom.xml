@@ -1,5 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom"><title>KernelNote - AI基础设施技术博客</title><link href="https://kernelnote.com/" rel="alternate"></link><link href="https://kernelnote.com/feeds/all.atom.xml" rel="self"></link><id>https://kernelnote.com/</id><updated>2025-11-02T12:00:00+08:00</updated><entry><title>揭秘《创业的你》：5个颠覆你职业认知的惊人法则</title><link href="https://kernelnote.com/deep-dive-starup-you.html" rel="alternate"></link><published>2025-11-02T12:00:00+08:00</published><updated>2025-11-02T12:00:00+08:00</updated><author><name>duma</name></author><id>tag:kernelnote.com,2025-11-02:/deep-dive-starup-you.html</id><summary type="html">&lt;h3&gt;序言&lt;/h3&gt;
+<feed xmlns="http://www.w3.org/2005/Atom"><title>KernelNote - AI基础设施技术博客</title><link href="https://kernelnote.com/" rel="alternate"></link><link href="https://kernelnote.com/feeds/all.atom.xml" rel="self"></link><id>https://kernelnote.com/</id><updated>2025-11-03T22:00:00+08:00</updated><entry><title>LinkedIn 创始人 Reid Hoffman: AI is bigger than internet</title><link href="https://kernelnote.com/ai-is-bigger-than-internet.html" rel="alternate"></link><published>2025-11-03T22:00:00+08:00</published><updated>2025-11-03T22:00:00+08:00</updated><author><name>duma</name></author><id>tag:kernelnote.com,2025-11-03:/ai-is-bigger-than-internet.html</id><summary type="html">&lt;p&gt;最近a16z对硅谷的传奇人物——LinkedIn 联合创始人、顶级投资人 Reid Hoffman 进行了一次深度访谈，在访谈当中这位硅谷大佬提出几个令人惊讶且违反直觉的 …&lt;/p&gt;</summary><content type="html">&lt;p&gt;最近a16z对硅谷的传奇人物——LinkedIn 联合创始人、顶级投资人 Reid Hoffman 进行了一次深度访谈，在访谈当中这位硅谷大佬提出几个令人惊讶且违反直觉的观点。比如当所有人都关注 AI 多么强大时，它的真正局限性是什么？又比如当媒体宣称 AI 将取代工作时，它实际的普及路径又是什么？接下来，我就为大家整理一下Reid Hoffman的一些主要观点。&lt;/p&gt;
+&lt;h3&gt;1. 为何顶级 AI 的表现仅为“B-”：共识的陷阱&lt;/h3&gt;
+&lt;p&gt;Reid Hoffman 分享了一个极具启发性的亲身经历：为了准备一场关于“AI 是否会在几年内取代所有医生”的辩论，他使用了所有顶级的 AI 模型——包括 OpenAI 的 ChatGPT-4、Anthropic 的 Claude Opus、谷歌的 Gemini Ultra 以及微软的 Co-pilot——并运用了自己所有的提示工程技巧，希望得到一个强有力的论点。&lt;/p&gt;
+&lt;p&gt;即便如此，结果依然令他失望。尽管这些 AI 在几分钟内就完成了分析师需要三天才能完成的工作，但它们提供的论点质量仅仅是“B-”或“B”的水平。&lt;/p&gt;
+&lt;p&gt;这其实点出了现在大语言模型（LLM）的一个大问题：它们特别会总结和输出 “大家都认可的观点”，也就是网上那些优质文章里的主流看法。但要是需要真正跳出常规、换个角度想问题，或者从其他领域找灵感，它们就明显不行了。
+这一点特别关键，因为它重新定义了未来专家的价值。专家不用再靠 “记多少知识” 取胜，而是要变成 “会用知识库的高手”（expert user of the knowledge store）—— 擅长做 AI 做不到的事，比如多些发散思考、多些跨界联想，这样才能提出更有深度的问题，甚至挑战那些公认的观点。&lt;/p&gt;
+&lt;h3&gt;2. 真正的机会在“硅谷盲区”，而非显而易见之处&lt;/h3&gt;
+&lt;p&gt;当被问及 AI 投资策略时，Hoffman 详述了他的三层布局，这远比单一押注更为深刻，展现了其投资组合的战略思维。&lt;/p&gt;
+&lt;p&gt;首先，是“显而易见的赛道”。这包括聊天机器人、编程助手和生产力工具。Hoffman 承认这是一个值得投资的领域，但其问题在于“对所有人来说都显而易见”，因此竞争异常激烈，很难做出差异化的投资。&lt;/p&gt;
+&lt;p&gt;其次，是探索 AI 如何颠覆现有的 Web 2.0 平台。平台变革之际，一个关键问题是：“因为 AI 的出现，是否会有新的 LinkedIn 成为可能？” 这类投资关注的是在既有商业模式（如网络效应、企业集成）的基础上，AI 能否重塑格局。&lt;/p&gt;
+&lt;p&gt;第三，也是 Hoffman 投入时间最多的领域，是他所谓的“硅谷盲区”（Silicon Valley blind spots）。这指的是那些 AI 能够发挥巨大作用，但通常被硅谷主流所忽视的领域，因为它们不完全属于“比特”（纯软件）的世界。硅谷的传统思维倾向于将一切都归结为软件问题，但这恰恰忽略了 AI 在物理世界（原子）和数字世界（比特）交叉点上的巨大潜力。&lt;/p&gt;
+&lt;p&gt;一个典型的例子是生物科技和药物研发。Hoffman 参与联合创办的 Mattis AI，其目标就是创建一个“以软件开发速度运行的药物发现工厂”。这正是 AI 在“原子世界”和“比特世界”交叉点上创造奇迹的体现。通过强大的预测能力，AI 可以在一个如同“在太阳系里捞针”般庞大的可能性空间中，找到那百分之一的有效方案。&lt;/p&gt;
+&lt;p&gt;Hoffman 认为，投资“盲区”更有可能创造出下一代颠覆性的标志性公司，因为这里竞争较少，且“跑道更长”。&lt;/p&gt;
+&lt;h3&gt;3. AI 普及的秘密武器：“更懒、更富”的人性法则&lt;/h3&gt;
+&lt;p&gt;关于 AI 将如何被社会广泛采纳，Hoffman 提出了一个极其精辟且符合人性的框架：“更懒、更富”。&lt;/p&gt;
+&lt;p&gt;他观察到，那些直接宣称“我有个产品会让所有人失业”的推销是行不通的，因为“没人会买那样的产品”，它会引发巨大的抵触情绪。相反，真正能成功推广的 AI 工具，是那些能够让个体用户——无论是医生、律师还是小企业主——实现“工作时间更少，赚得更多”的工具。&lt;/p&gt;
+&lt;p&gt;这个框架的现实意义在于，它揭示了 AI 的普及将是一个自下而上的、由个人利益驱动的过程，而非仅仅是企业自上而下的效率革命。这解释了为什么 AI 在个体执业者和中小企业中的采纳速度，可能远比在那些存在“委托代理问题”的大型企业中更快。对于一个诊所医生或独立律师来说，一个能让他服务五倍客户的工具，带来的好处是直接且实实在在的。&lt;/p&gt;
+&lt;h3&gt;4. AI 被严重低估了，因为我们总用现在评价未来&lt;/h3&gt;
+&lt;p&gt;在一个看似 AI 被过度炒作的时代，Hoffman 却提出了一个惊人的观点：在“真实世界”中，AI 其实被严重低估了。&lt;/p&gt;
+&lt;p&gt;他认为，人们之所以低估 AI，是因为犯了一个根本性的“类别错误”：他们用 AI 当下的表现来评判它的价值，而不是从它惊人的发展曲线上看待其潜力。&lt;/p&gt;
+&lt;p&gt;Hoffman 用了一个生动的类比：“两岁半的老虎伍兹”。当一个两岁半的孩子打出了一记完美的高尔夫直球，愚蠢的观察者会说：“我比他打得远多了。”而聪明的观察者则会惊叹：“哇，如果这个孩子继续这样发展，他未来将不可限量。”&lt;/p&gt;
+&lt;p&gt;许多人对 AI 的态度就像前者。他们可能在过去某个时间点试用过某个版本的 AI，发现它没能解决自己的问题，于是就此下结论说“AI 不行了”。这完全忽略了 AI 正在以指数级的速度进步。&lt;/p&gt;
+&lt;p&gt;正如 AI 领域的思想家 Ethan Mollick 的名言所说：&lt;/p&gt;
+&lt;p&gt;The worst AI you're ever going to use is the AI you're using today.&lt;/p&gt;
+&lt;p&gt;（你用过的最差的 AI，就是你今天正在用的这个。）&lt;/p&gt;
+&lt;p&gt;这意味着我们不应因为 AI 的某个不完美瞬间而否定它的整个未来。Hoffman 甚至直言：“如果你今天还没有找到一个 AI 的严肃用途，说明你还不够努力。”我们必须改变视角，持续尝试，才能跟上这趟飞速前行的列车。&lt;/p&gt;</content><category term="articles"></category><category term="ai"></category><category term="linkedin"></category><category term="reid hoffman"></category><category term="investment"></category></entry><entry><title>揭秘《创业的你》：5个颠覆你职业认知的惊人法则</title><link href="https://kernelnote.com/deep-dive-starup-you.html" rel="alternate"></link><published>2025-11-02T12:00:00+08:00</published><updated>2025-11-02T12:00:00+08:00</updated><author><name>duma</name></author><id>tag:kernelnote.com,2025-11-02:/deep-dive-starup-you.html</id><summary type="html">&lt;h3&gt;序言&lt;/h3&gt;
 &lt;p&gt;在当今的职业环境中，有一个残酷的真相：你的才华和你的收入，早已不再挂钩。在我们的职业生涯中，许多才华横溢的 …&lt;/p&gt;</summary><content type="html">&lt;h3&gt;序言&lt;/h3&gt;
 &lt;p&gt;在当今的职业环境中，有一个残酷的真相：你的才华和你的收入，早已不再挂钩。在我们的职业生涯中，许多才华横溢的专业人士都面临着一个普遍的困境：他们在自己的领域里出类拔萃，却难以获得与之匹配的收入。&lt;/p&gt;
 &lt;p&gt;正如商业思想家多瑞·克拉克（Dorie Clark）在其著作《创业的你》（Entrepreneurial You）的开篇所指出的，在现代经济中，“成功”与收入已日益脱钩。你可以才华横溢、备受推崇，但除非你对自己的职业选择深思熟虑，否则最终可能劳而无功。&lt;/p&gt;
@@ -13,7 +38,7 @@
 &lt;p&gt;许多人认为副业会分散精力，甚至需要对主业雇主遮遮掩掩。但一个惊人的事实是，一个成功的副业项目可以直接加速你在企业内的晋升。&lt;/p&gt;
 &lt;p&gt;书中分享了莱尼·阿昌（Lenny Achan）的案例。阿昌原本是一名护士，并一路晋升为纽约市西奈山医院的行政人员。当他的上司把他叫进办公室，发现他在业余时间开发了一款应用程序后，阿昌非常担心：他是不是违反了什么自己不知道的政策？还是被怀疑在上班时间“摸鱼”？然而，他的职业生涯却迎来了意想不到的转机。上司非但没有责备他“不务正业”，反而极其欣赏他的主动性和创新精神，将他提拔为社交媒体负责人，并最终让他掌管了整个医院的传播部门。&lt;/p&gt;
 &lt;p&gt;这个案例极具启发性。它重新定义了“副业”的价值——它不仅是增加收入的渠道，更是一个强大的个人职业发展平台。通过副业，你证明了自己拥有超越本职工作的、主动解决问题的思维模式。这种能力在任何大型组织中都极为稀缺，它向领导层发出了一个明确信号：你不仅能执行任务，更能创造价值。这让你成为一个具备创业家精神的“内部创业者”（intrapreneur），也让你成为晋升领导岗位的首选候选人。&lt;/p&gt;
-&lt;p&gt;法则三：比起社交媒体，老派的电子邮件才是你最宝贵的资产&lt;/p&gt;
+&lt;h3&gt;法则三：比起社交媒体，老派的电子邮件才是你最宝贵的资产&lt;/h3&gt;
 &lt;p&gt;在社交媒体大行其道的今天，我们很容易忽视一个最基本但最强大的工具。克拉克在书中明确指出，电子邮件是比任何社交媒体平台都更可靠、更有价值的资产。&lt;/p&gt;
 &lt;p&gt;为了支撑这一论点，书中提供了确凿的证据。例如，2013年Facebook的一次算法调整，就曾给无数依赖其平台的品牌带来巨大打击。在线营销专家丹尼·沙利文（Danny Sullivan）的一项研究也发现，他发布的任何一条推文，平均只有1.3%到2.6%的粉丝能够看到。你与社交媒体粉丝之间的关系，主动权并不在你手里。&lt;/p&gt;
 &lt;p&gt;在我为这本书采访的近五十位专家和思想领袖中，有一个压倒性的共识：老式的电子邮件。&lt;/p&gt;
